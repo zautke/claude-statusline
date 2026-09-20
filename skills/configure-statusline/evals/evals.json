@@ -1,0 +1,8 @@
+{
+  "skill_name": "configure-statusline",
+  "evals": [
+    {"id": 1, "prompt": "Make my 5h, 7d, and Fable bars 8, 10, and 14 cells long and preview it.", "expected_output": "Updates only active profile widths, validates ranges, and previews all three bars.", "files": []},
+    {"id": 2, "prompt": "Put Fable first, hide disk and tmp, and use purple for critical usage.", "expected_output": "Reorders and filters segments, validates RGB input, preserves unrelated configuration.", "files": []},
+    {"id": 3, "prompt": "Uninstall the custom Claude status line but keep every other setting.", "expected_output": "Removes only owned status-line configuration and disables the plugin.", "files": []}
+  ]
+}
