@@ -76,11 +76,12 @@ function Refresh-Fable {
             Accept = 'application/json'
             'User-Agent' = 'claude-code/braisenly-statusline'
         } -TimeoutSec 8
-        $limit = @($response.limits | Where-Object {
+        $limits = if ($response.limits) { $response.limits } elseif ($response.cachedUsageUtilization.utilization.limits) { $response.cachedUsageUtilization.utilization.limits } else { @() }
+        $limit = @($limits | Where-Object {
             $_.kind -eq 'weekly_scoped' -and
-            ([string]($_.scope.model.display_name ?? $_.scope.model ?? $_.model)).ToLowerInvariant() -eq $fableModel.ToLowerInvariant()
+            ([string]($_.scope.model.display_name ?? $_.scope.model ?? $_.model)).StartsWith($fableModel, [System.StringComparison]::OrdinalIgnoreCase)
         }) | Select-Object -First 1
-        $pct = if ($limit) { $limit.used_percentage ?? $limit.utilization ?? $limit.usage_percentage } else { $response.fable.used_percentage ?? $response.weekly_fable.used_percentage ?? $response.seven_day_fable.used_percentage }
+        $pct = if ($limit) { $limit.percent ?? $limit.used_percentage ?? $limit.utilization ?? $limit.usage_percentage } else { $response.fable.percent ?? $response.fable.used_percentage ?? $response.weekly_fable.percent ?? $response.weekly_fable.used_percentage ?? $response.seven_day_fable.percent ?? $response.seven_day_fable.used_percentage }
         $number = 0.0
         if ($null -ne $pct -and [double]::TryParse([string]$pct, [ref]$number)) {
             $cache = [ordered]@{ used_percentage = [double]$number; resets_at = [string]($limit.resets_at ?? $response.fable.resets_at); model = $fableModel; fetched_at = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }

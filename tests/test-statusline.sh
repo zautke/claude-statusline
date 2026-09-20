@@ -70,6 +70,11 @@ bash "$ROOT/scripts/statusline-command.sh" --refresh-fable
 jq -e '.used_percentage==67 and .resets_at=="soon" and (.accessToken|not)' "$XDG_CACHE_HOME/braisenly-statusline/fable.json" >/dev/null
 
 rm -f "$XDG_CACHE_HOME/braisenly-statusline/fable.json"
+export FAKE_USAGE_RESPONSE='{"limits":[{"kind":"weekly_scoped","scope":{"model":{"display_name":"Fable 5"}},"percent":73,"resets_at":"later-percent"}]}'
+bash "$ROOT/scripts/statusline-command.sh" --refresh-fable
+jq -e '.used_percentage==73 and .resets_at=="later-percent"' "$XDG_CACHE_HOME/braisenly-statusline/fable.json" >/dev/null
+
+rm -f "$XDG_CACHE_HOME/braisenly-statusline/fable.json"
 export FAKE_USAGE_RESPONSE='{"fable":{"used_percentage":55,"resets_at":"later"}}'
 bash "$ROOT/scripts/statusline-command.sh" --refresh-fable
 jq -e '.used_percentage==55 and .resets_at=="later"' "$XDG_CACHE_HOME/braisenly-statusline/fable.json" >/dev/null
