@@ -35,24 +35,69 @@ if ($PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -
     $PSStyle.OutputRendering = [System.Management.Automation.OutputRendering]::Ansi
 }
 
-$input_data = [Console]::In.ReadToEnd()
-
 $configDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
 $cacheRoot = if ($env:XDG_CACHE_HOME) { $env:XDG_CACHE_HOME } else { Join-Path $HOME '.cache' }
 $fablePct = $null
 $fableLabel = 'Fable'
+$fableModel = 'Fable'
 $fableWidth = 12
+$fableRefreshSeconds = 600
 $fableMaxStale = 86400
 $configPath = Join-Path $configDir 'statusline.json'
 if (Test-Path -LiteralPath $configPath) {
     try {
         $cfg = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
-        if ($cfg.fable.model) { $fableLabel = [string]$cfg.fable.model }
+        if ($cfg.fable.model) { $fableModel = [string]$cfg.fable.model; $fableLabel = $fableModel }
         if ($cfg.widths.fable) { $fableWidth = [int]$cfg.widths.fable }
+        if ($cfg.fable.refresh_seconds) { $fableRefreshSeconds = [int64]$cfg.fable.refresh_seconds }
         if ($cfg.fable.max_stale_seconds) { $fableMaxStale = [int64]$cfg.fable.max_stale_seconds }
     } catch { }
 }
 $fableCache = Join-Path $cacheRoot 'braisenly-statusline/fable.json'
+
+function Get-OAuthToken {
+    if ($env:CLAUDE_CODE_OAUTH_TOKEN) { return $env:CLAUDE_CODE_OAUTH_TOKEN }
+    $credentialPath = Join-Path $configDir '.credentials.json'
+    if (Test-Path -LiteralPath $credentialPath) {
+        try {
+            $credentials = Get-Content -LiteralPath $credentialPath -Raw | ConvertFrom-Json
+            return [string]($credentials.claudeAiOauth.accessToken ?? $credentials.accessToken)
+        } catch { }
+    }
+    return ''
+}
+
+function Refresh-Fable {
+    $token = Get-OAuthToken
+    if (-not $token) { return }
+    $cacheDir = Split-Path -Parent $fableCache
+    New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+    $lock = Join-Path $cacheDir 'refresh.lock'
+    try { New-Item -ItemType Directory -Path $lock -ErrorAction Stop | Out-Null } catch { return }
+    try {
+        $response = Invoke-RestMethod -Uri ($env:BRAISENLY_STATUSLINE_USAGE_URL ?? 'https://api.anthropic.com/api/oauth/usage') -Headers @{
+            Authorization = "Bearer $token"
+            'anthropic-beta' = 'oauth-2025-04-20'
+            Accept = 'application/json'
+            'User-Agent' = 'claude-code/braisenly-statusline'
+        } -TimeoutSec 8
+        $limit = @($response.limits | Where-Object {
+            $_.kind -eq 'weekly_scoped' -and
+            ([string]($_.scope.model.display_name ?? $_.scope.model ?? $_.model)).ToLowerInvariant() -eq $fableModel.ToLowerInvariant()
+        }) | Select-Object -First 1
+        $pct = if ($limit) { $limit.used_percentage ?? $limit.utilization ?? $limit.usage_percentage } else { $response.fable.used_percentage ?? $response.weekly_fable.used_percentage ?? $response.seven_day_fable.used_percentage }
+        $number = 0.0
+        if ($null -ne $pct -and [double]::TryParse([string]$pct, [ref]$number)) {
+            $cache = [ordered]@{ used_percentage = [double]$number; resets_at = [string]($limit.resets_at ?? $response.fable.resets_at); model = $fableModel; fetched_at = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
+            $tmp = "$fableCache.tmp.$PID"
+            $cache | ConvertTo-Json -Compress | Set-Content -LiteralPath $tmp -Encoding utf8
+            Move-Item -LiteralPath $tmp -Destination $fableCache -Force
+        }
+    } catch { }
+    finally { Remove-Item -LiteralPath $lock -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+if ($RefreshFable) { Refresh-Fable; exit 0 }
 if (Test-Path -LiteralPath $fableCache) {
     try {
         $cached = Get-Content -LiteralPath $fableCache -Raw | ConvertFrom-Json
@@ -62,6 +107,19 @@ if (Test-Path -LiteralPath $fableCache) {
         }
     } catch { }
 }
+
+if (-not $env:BRAISENLY_STATUSLINE_DISABLE_REFRESH) {
+    $needsRefresh = $true
+    if (Test-Path -LiteralPath $fableCache) {
+        $cacheAge = ([DateTimeOffset]::UtcNow - (Get-Item -LiteralPath $fableCache).LastWriteTimeUtc).TotalSeconds
+        $needsRefresh = $cacheAge -ge $fableRefreshSeconds
+    }
+    if ($needsRefresh) {
+        Start-Process -FilePath 'pwsh' -ArgumentList "-NoProfile -NonInteractive -File `"$PSCommandPath`" -RefreshFable" -WindowStyle Hidden
+    }
+}
+
+$input_data = [Console]::In.ReadToEnd()
 
 $ESC     = [char]27
 $R       = "$ESC[0m"
