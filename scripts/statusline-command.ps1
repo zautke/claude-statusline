@@ -24,11 +24,6 @@ if ($bash -and -not $IsWindows) {
     exit $LASTEXITCODE
 }
 
-if ($RefreshFable) {
-    [Console]::Error.WriteLine('Fable refresh requires Git Bash when using the PowerShell entry point.')
-    exit 1
-}
-
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::InputEncoding  = [System.Text.Encoding]::UTF8
 if ($PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 2) {
