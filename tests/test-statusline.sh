@@ -77,6 +77,6 @@ jq -e '.used_percentage==55 and .resets_at=="later"' "$XDG_CACHE_HOME/braisenly-
 jq '.fetched_at=1' "$XDG_CACHE_HOME/braisenly-statusline/fable.json" >"$TMP/stale.json"
 mv "$TMP/stale.json" "$XDG_CACHE_HOME/braisenly-statusline/fable.json"
 stale=$(printf '%s' "$payload" | NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 bash "$ROOT/scripts/statusline-command.sh")
-[[ "$stale" != *"Fable ["* ]] || { printf 'stale Fable cache rendered\n' >&2; exit 1; }
+[[ "$stale" == *"Fable ["*"(n/a)"* ]] || { printf 'missing unavailable Fable bar\n' >&2; exit 1; }
 
 printf 'ok\n'

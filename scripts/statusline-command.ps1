@@ -16,7 +16,7 @@ if ($Help) { Usage; exit 0 }
 # Claude Code on Windows requires Git Bash. Reuse canonical renderer so both
 # entry points share validation, configuration, cache, and OAuth behavior.
 $bash = Get-Command bash -ErrorAction SilentlyContinue
-if ($bash) {
+if ($bash -and -not $IsWindows) {
     $renderer = Join-Path $PSScriptRoot 'statusline-command.sh'
     if ($RefreshFable) { & $bash.Source $renderer --refresh-fable; exit $LASTEXITCODE }
     $stdin = [Console]::In.ReadToEnd()
@@ -36,6 +36,32 @@ if ($PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -
 }
 
 $input_data = [Console]::In.ReadToEnd()
+
+$configDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
+$cacheRoot = if ($env:XDG_CACHE_HOME) { $env:XDG_CACHE_HOME } else { Join-Path $HOME '.cache' }
+$fablePct = $null
+$fableLabel = 'Fable'
+$fableWidth = 12
+$fableMaxStale = 86400
+$configPath = Join-Path $configDir 'statusline.json'
+if (Test-Path -LiteralPath $configPath) {
+    try {
+        $cfg = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+        if ($cfg.fable.model) { $fableLabel = [string]$cfg.fable.model }
+        if ($cfg.widths.fable) { $fableWidth = [int]$cfg.widths.fable }
+        if ($cfg.fable.max_stale_seconds) { $fableMaxStale = [int64]$cfg.fable.max_stale_seconds }
+    } catch { }
+}
+$fableCache = Join-Path $cacheRoot 'braisenly-statusline/fable.json'
+if (Test-Path -LiteralPath $fableCache) {
+    try {
+        $cached = Get-Content -LiteralPath $fableCache -Raw | ConvertFrom-Json
+        $age = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [int64]$cached.fetched_at
+        if ($age -ge 0 -and $age -le $fableMaxStale -and $null -ne $cached.used_percentage) {
+            $fablePct = [int][math]::Round([double]$cached.used_percentage)
+        }
+    } catch { }
+}
 
 $ESC     = [char]27
 $R       = "$ESC[0m"
@@ -210,6 +236,15 @@ if ($null -ne $rl5h) {
 if ($null -ne $rl7d) {
     $v    = [int][math]::Round($rl7d)
     $out += "$(Get-Sep)${C_LABEL}7d${R} $(Get-Bar $v 12) ($(Format-PctText $v))"
+}
+
+# Fable usage — show empty bar while cache is unavailable; never invent a percentage.
+$out += Get-Sep
+$out += "${C_LABEL}${fableLabel}${R} "
+if ($null -ne $fablePct) {
+    $out += "$(Get-Bar $fablePct $fableWidth) ($(Format-PctText $fablePct))"
+} else {
+    $out += "$(Get-Bar 0 $fableWidth) (n/a)"
 }
 
 # drift quotient block — inverted bar (high = good = green-filled)
