@@ -250,9 +250,9 @@ $out += Get-Sep
 $out += "${C_LABEL}ctx${R} "
 if ($null -ne $usedPct -and $ctxSize -gt 0) {
     $ui   = [int][math]::Round($usedPct)
-    $out += "$(Get-Bar $ui 20) ${C_VAL}$(Format-Bytes $totalIn)${R}/${C_VAL}$(Format-Bytes $ctxSize)${R} ($(Format-PctText $ui))"
+    $out += "$(Get-Bar $ui 12) ${C_VAL}$(Format-Bytes $totalIn)${R}/${C_VAL}$(Format-Bytes $ctxSize)${R} ($(Format-PctText $ui))"
 } else {
-    $out += Get-Bar 0 20
+    $out += Get-Bar 0 12
 }
 
 # Disk space — platform-aware
@@ -261,7 +261,7 @@ if ($IsWindows) {
     if ($drive -and ($drive.Used + $drive.Free) -gt 0) {
         $total = $drive.Used + $drive.Free
         $dp    = [int]($drive.Used * 100 / $total)
-        $out  += "$(Get-Sep)${C_LABEL}disk${R} $(Get-Bar $dp 15) ${C_VAL}$(Format-Bytes ([long]$drive.Free))${R} free"
+        $out  += "$(Get-Sep)${C_LABEL}disk${R} $(Get-Bar $dp 12) ${C_VAL}$(Format-Bytes ([long]$drive.Free))${R} free"
     }
 } else {
     # macOS / Linux
@@ -271,7 +271,7 @@ if ($IsWindows) {
         $dt = [long]$parts[1]; $da = [long]$parts[3]
         if ($dt -gt 0) {
             $dp   = [int](($dt - $da) * 100 / $dt)
-            $out += "$(Get-Sep)${C_LABEL}disk${R} $(Get-Bar $dp 15) ${C_VAL}$(Format-Bytes ($da * 1024))${R} free"
+            $out += "$(Get-Sep)${C_LABEL}disk${R} $(Get-Bar $dp 12) ${C_VAL}$(Format-Bytes ($da * 1024))${R} free"
         }
     }
     $tfOut = (df -k /tmp 2>$null | Select-Object -Last 1)
