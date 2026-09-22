@@ -77,6 +77,7 @@ function Refresh-Fable {
     $lock = Join-Path $cacheDir 'refresh.lock'
     $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
     # A refresh killed mid-flight never reaches its finally block; reclaim a lock older than 60s.
+    # ponytail: remove+create is not atomic; two renders racing on one stale lock can both refresh once.
     if ((Test-Path -LiteralPath $lock) -and ([DateTimeOffset]::UtcNow - (Get-Item -LiteralPath $lock).LastWriteTimeUtc).TotalSeconds -gt 60) {
         Remove-Item -LiteralPath $lock -Recurse -Force -ErrorAction SilentlyContinue
     }

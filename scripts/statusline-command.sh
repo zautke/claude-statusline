@@ -86,14 +86,16 @@ refresh_fable() (
   now=$(date +%s)
   if ! mkdir "$lock" 2>/dev/null; then
     # A refresh killed mid-flight (statusline timeout) never runs its EXIT trap; reclaim its lock.
-    mtime=$(stat -f %m "$lock" 2>/dev/null || stat -c %Y "$lock" 2>/dev/null || printf "$now")
+    # GNU stat first: on Linux `stat -f` means filesystem status and would not yield an mtime.
+    mtime=$(stat -c %Y "$lock" 2>/dev/null || stat -f %m "$lock" 2>/dev/null || printf "$now")
+    # ponytail: rmdir+mkdir is not atomic; two renders racing on one stale lock can both refresh once.
     ((now-mtime>60)) && rmdir "$lock" 2>/dev/null && mkdir "$lock" 2>/dev/null || return 0
   fi
   trap 'rmdir "$lock" 2>/dev/null; rm -f "$headers"' EXIT
   next=$(cat "$next_file" 2>/dev/null); [[ $next =~ ^[0-9]+$ ]] && ((now<next)) && return 0
+  token=$(oauth_token); [[ -n "$token" ]] || return 0
   # Claim the slot before the request so a failure backs off instead of retrying on every render.
   printf '%s' $((now+refresh_seconds)) >"$next_file"
-  token=$(oauth_token); [[ -n "$token" ]] || return 0
   if ! response=$(printf 'Authorization: Bearer %s\n' "$token" | curl -fsS -D "$headers" --max-time 8 -H @- -H 'anthropic-beta: oauth-2025-04-20' -H 'Accept: application/json' -H 'User-Agent: claude-code/braisenly-statusline' "${BRAISENLY_STATUSLINE_USAGE_URL:-https://api.anthropic.com/api/oauth/usage}" 2>/dev/null); then
     retry=$(tr -d '\r' <"$headers" 2>/dev/null | awk -F': *' 'tolower($1)=="retry-after"{print $2}' | tail -1)
     [[ $retry =~ ^[0-9]+$ ]] && ((retry>refresh_seconds)) && printf '%s' $((now+retry)) >"$next_file"
