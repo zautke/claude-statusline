@@ -82,16 +82,25 @@ oauth_token() {
 
 refresh_fable() (
   mkdir -p "$cache_dir" 2>/dev/null || return 0
-  local lock=$cache_dir/refresh.lock now mtime token response pct reset tmp
-  mkdir "$lock" 2>/dev/null || return 0
-  trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+  local lock=$cache_dir/refresh.lock next_file=$cache_dir/next_refresh headers=$cache_dir/headers.$$ now next mtime token response pct reset tmp retry
   now=$(date +%s)
-  if [[ -r "$cache_file" ]]; then
-    mtime=$(stat -f %m "$cache_file" 2>/dev/null || stat -c %Y "$cache_file" 2>/dev/null || printf 0)
-    ((now-mtime<refresh_seconds)) && return 0
+  if ! mkdir "$lock" 2>/dev/null; then
+    # A refresh killed mid-flight (statusline timeout) never runs its EXIT trap; reclaim its lock.
+    # GNU stat first: on Linux `stat -f` means filesystem status and would not yield an mtime.
+    mtime=$(stat -c %Y "$lock" 2>/dev/null || stat -f %m "$lock" 2>/dev/null || printf "$now")
+    # ponytail: rmdir+mkdir is not atomic; two renders racing on one stale lock can both refresh once.
+    ((now-mtime>60)) && rmdir "$lock" 2>/dev/null && mkdir "$lock" 2>/dev/null || return 0
   fi
+  trap 'rmdir "$lock" 2>/dev/null; rm -f "$headers"' EXIT
+  next=$(cat "$next_file" 2>/dev/null); [[ $next =~ ^[0-9]+$ ]] && ((now<next)) && return 0
   token=$(oauth_token); [[ -n "$token" ]] || return 0
-  response=$(printf 'Authorization: Bearer %s\n' "$token" | curl -fsS --max-time 8 -H @- -H 'anthropic-beta: oauth-2025-04-20' -H 'Accept: application/json' -H 'User-Agent: claude-code/braisenly-statusline' "${BRAISENLY_STATUSLINE_USAGE_URL:-https://api.anthropic.com/api/oauth/usage}" 2>/dev/null) || return 0
+  # Claim the slot before the request so a failure backs off instead of retrying on every render.
+  printf '%s' $((now+refresh_seconds)) >"$next_file"
+  if ! response=$(printf 'Authorization: Bearer %s\n' "$token" | curl -fsS -D "$headers" --max-time 8 -H @- -H 'anthropic-beta: oauth-2025-04-20' -H 'Accept: application/json' -H 'User-Agent: claude-code/braisenly-statusline' "${BRAISENLY_STATUSLINE_USAGE_URL:-https://api.anthropic.com/api/oauth/usage}" 2>/dev/null); then
+    retry=$(tr -d '\r' <"$headers" 2>/dev/null | awk -F': *' 'tolower($1)=="retry-after"{print $2}' | tail -1)
+    [[ $retry =~ ^[0-9]+$ ]] && ((retry>refresh_seconds)) && printf '%s' $((now+retry)) >"$next_file"
+    return 0
+  fi
   pct=$(jq -r --arg m "$fable_model" '([(.limits // .cachedUsageUtilization.utilization.limits // [])[]?|select(.kind=="weekly_scoped")|select(((.scope.model.display_name//.scope.model//.model//"")|ascii_downcase|startswith($m|ascii_downcase)))][0]|.percent//.used_percentage//.utilization//.usage_percentage)//.fable.percent//.fable.used_percentage//.weekly_fable.percent//.weekly_fable.used_percentage//.seven_day_fable.percent//.seven_day_fable.used_percentage//empty' <<<"$response" 2>/dev/null)
   reset=$(jq -r --arg m "$fable_model" '([(.limits // .cachedUsageUtilization.utilization.limits // [])[]?|select(.kind=="weekly_scoped")|select(((.scope.model.display_name//.scope.model//.model//"")|ascii_downcase|startswith($m|ascii_downcase)))][0]|.resets_at//.reset_at)//.fable.resets_at//.weekly_fable.resets_at//.seven_day_fable.resets_at//empty' <<<"$response" 2>/dev/null)
   [[ $pct =~ ^[0-9]+([.][0-9]+)?$ ]] || return 0
@@ -105,22 +114,22 @@ if [[ $mode == refresh ]]; then refresh_fable; exit 0; fi
 input=$(cat)
 if [[ -n ${NO_COLOR:-} ]]; then reset= model_color= label_color= sep_color= value_color= empty_color=
 else reset=$'\033[0m'; model_color=$'\033[1;38;5;75m'; label_color=$'\033[38;5;240m'; sep_color=$'\033[38;5;237m'; value_color=$'\033[38;5;243m'; empty_color=$'\033[38;5;59m'; fi
-partial=('' '▏' '▎' '▍' '▌' '▋' '▊' '▉')
 
 sep() { printf '%s ● %s' "$sep_color" "$reset"; }
 fmt_bytes() { local b=$1; if ((b>=1073741824)); then awk -v b="$b" 'BEGIN{printf "%.1fG",b/1073741824}'; elif ((b>=1048576)); then awk -v b="$b" 'BEGIN{printf "%.1fM",b/1048576}'; elif ((b>=1024)); then awk -v b="$b" 'BEGIN{printf "%.1fK",b/1024}'; else printf '%dB' "$b"; fi; }
 pct_text() { local p=$1 r g b; if ((p<=usage_warn)); then r=$ok_r g=$ok_g b=$ok_b; elif ((p<=usage_critical)); then r=$warn_r g=$warn_g b=$warn_b; else r=$crit_r g=$crit_g b=$crit_b; fi; if [[ -n ${NO_COLOR:-} ]]; then printf '%d%%' "$p"; else printf '\033[38;2;%d;%d;%dm%d%%%s' "$r" "$g" "$b" "$p" "$reset"; fi; }
 drift_text() { local p=$1 r g b; if ((p>=drift_good)); then r=$ok_r g=$ok_g b=$ok_b; elif ((p>=drift_warn)); then r=$warn_r g=$warn_g b=$warn_b; else r=$crit_r g=$crit_g b=$crit_b; fi; if [[ -n ${NO_COLOR:-} ]]; then printf '%d%%' "$p"; else printf '\033[38;2;%d;%d;%dm%d%%%s' "$r" "$g" "$b" "$p" "$reset"; fi; }
 bar() {
-  local pct=$1 width=${2:-20} inverted=${3:-0} eighths full part start i pos r g b p2
-  ((pct<0))&&pct=0; ((pct>100))&&pct=100; eighths=$((pct*width*8/100)); full=$((eighths/8)); part=$((eighths%8)); start=$((full+(part>0?1:0)))
+  local pct=$1 width=${2:-20} inverted=${3:-0} full i pos r g b p2
+  ((pct<0))&&pct=0; ((pct>100))&&pct=100
+  # Whole cells only: an eighth-block glyph leaves a blank gap before the ░ track.
+  full=$(((pct*width+50)/100)); ((pct>0&&full==0))&&full=1
   printf '['
-  for ((i=0;i<full&&i<width;i++)); do
+  for ((i=0;i<full;i++)); do
     ((inverted))&&pos=$((100-i*100/width))||pos=$((i*100/width)); if ((pos<=50)); then r=$((40+180*pos/50)); g=$((170-10*pos/50)); b=$((60-60*pos/50)); else p2=$((pos-50)); r=$((220-40*p2/50)); g=$((160-160*p2/50)); b=0; fi
     [[ -n ${NO_COLOR:-} ]]&&printf '█'||printf '\033[38;2;%d;%d;%dm█' "$r" "$g" "$b"
   done
-  if ((full<width&&part>0)); then printf '%s' "${partial[$part]}"; fi
-  ((start<width))&&printf '%s' "$empty_color"; for ((i=start;i<width;i++)); do printf '░'; done; printf '%s]' "$reset"
+  ((full<width))&&printf '%s' "$empty_color"; for ((i=full;i<width;i++)); do printf '░'; done; printf '%s]' "$reset"
 }
 
 model=$(jq -r '.model.display_name//"Claude"' <<<"$input"); used=$(jq -r '.context_window.used_percentage//"null"' <<<"$input"); total_in=$(jq -r '.context_window.total_input_tokens//0' <<<"$input"); ctx=$(jq -r '.context_window.context_window_size//0' <<<"$input"); five=$(jq -r '.rate_limits.five_hour.used_percentage//"null"' <<<"$input"); seven=$(jq -r '.rate_limits.seven_day.used_percentage//"null"' <<<"$input"); session=$(jq -r '.session_id//empty' <<<"$input")
@@ -132,8 +141,8 @@ if [[ -n $session && -r $config_dir/state/drift/$session.jsonl ]]; then last=$(t
 render_model(){ printf '%s%s%s' "$model_color" "$model" "$reset"; }
 render_profile(){ local p=${CLAUDE_PROFILE:-} b; if [[ -z $p && -n ${CLAUDE_CONFIG_DIR:-} ]]; then b=${CLAUDE_CONFIG_DIR##*/}; [[ $b == .claude-* ]]&&p=${b#.claude-}; fi; [[ -n $p ]]&&printf '%sprof%s %s%s%s' "$label_color" "$reset" "$value_color" "$p" "$reset"; }
 render_cwd(){ local p=${PWD/#$HOME/\~}; ((${#p}>30))&&p="…/$(basename "$(dirname "$PWD")")/$(basename "$PWD")"; printf '%s%s%s' "$value_color" "$p" "$reset"; }
-render_context(){ local v w; w=$(get_width context 20); printf '%s%s%s ' "$label_color" "$(get_label context ctx)" "$reset"; if [[ $used != null && $ctx -gt 0 ]]; then v=$(printf '%.0f' "$used"); printf '%s %s%s%s/%s%s%s (%s)' "$(bar "$v" "$w")" "$value_color" "$(fmt_bytes "$total_in")" "$reset" "$value_color" "$(fmt_bytes "$ctx")" "$reset" "$(pct_text "$v")"; else bar 0 "$w"; fi; }
-render_disk(){ local x t a p w; x=$(df -k / 2>/dev/null|tail -1); [[ -n $x ]]||return; t=$(awk '{print $2}'<<<"$x"); a=$(awk '{print $4}'<<<"$x"); ((t>0))||return; p=$(((t-a)*100/t)); w=$(get_width disk 15); printf '%s%s%s %s %s%s%s free' "$label_color" "$(get_label disk disk)" "$reset" "$(bar "$p" "$w")" "$value_color" "$(fmt_bytes $((a*1024)))" "$reset"; }
+render_context(){ local v w; w=$(get_width context 12); printf '%s%s%s ' "$label_color" "$(get_label context ctx)" "$reset"; if [[ $used != null && $ctx -gt 0 ]]; then v=$(printf '%.0f' "$used"); printf '%s %s%s%s/%s%s%s (%s)' "$(bar "$v" "$w")" "$value_color" "$(fmt_bytes "$total_in")" "$reset" "$value_color" "$(fmt_bytes "$ctx")" "$reset" "$(pct_text "$v")"; else bar 0 "$w"; fi; }
+render_disk(){ local x t a p w; x=$(df -k / 2>/dev/null|tail -1); [[ -n $x ]]||return; t=$(awk '{print $2}'<<<"$x"); a=$(awk '{print $4}'<<<"$x"); ((t>0))||return; p=$(((t-a)*100/t)); w=$(get_width disk 12); printf '%s%s%s %s %s%s%s free' "$label_color" "$(get_label disk disk)" "$reset" "$(bar "$p" "$w")" "$value_color" "$(fmt_bytes $((a*1024)))" "$reset"; }
 render_tmp(){ local x d t a p w; x=$(df -k /tmp 2>/dev/null|tail -1); d=$(awk '{print $1}'<<<"$x"); [[ $d == tmpfs ]]||return; t=$(awk '{print $2}'<<<"$x"); a=$(awk '{print $4}'<<<"$x"); ((t>0))||return; p=$(((t-a)*100/t)); w=$(get_width tmp 15); printf '%s%s%s %s %s%s%s free' "$label_color" "$(get_label tmp /tmp)" "$reset" "$(bar "$p" "$w")" "$value_color" "$(fmt_bytes $((a*1024)))" "$reset"; }
 render_usage(){ local k=$1 d=$2 p=$3 v w; [[ $p != null && -n $p ]]||return; v=$(printf '%.0f' "$p"); w=$(get_width "$k" 12); printf '%s%s%s %s (%s)' "$label_color" "$(get_label "$k" "$d")" "$reset" "$(bar "$v" "$w")" "$(pct_text "$v")"; }
 render_fable(){ local p=$1 v w; w=$(get_width fable 12); if [[ $p == null || -z $p ]]; then printf '%s%s%s %s (n/a)' "$label_color" "$(get_label fable Fable)" "$reset" "$(bar 0 "$w")"; else v=$(printf '%.0f' "$p"); printf '%s%s%s %s (%s)' "$label_color" "$(get_label fable Fable)" "$reset" "$(bar "$v" "$w")" "$(pct_text "$v")"; fi; }

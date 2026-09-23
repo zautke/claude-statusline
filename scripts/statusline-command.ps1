@@ -62,14 +62,30 @@ function Get-OAuthToken {
     return ''
 }
 
+$nextRefreshFile = Join-Path (Split-Path -Parent $fableCache) 'next_refresh'
+function Get-NextRefresh {
+    $next = 0L
+    if (Test-Path -LiteralPath $nextRefreshFile) { [void][int64]::TryParse((Get-Content -LiteralPath $nextRefreshFile -Raw), [ref]$next) }
+    return $next
+}
+
 function Refresh-Fable {
     $token = Get-OAuthToken
     if (-not $token) { return }
     $cacheDir = Split-Path -Parent $fableCache
     New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
     $lock = Join-Path $cacheDir 'refresh.lock'
+    $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    # A refresh killed mid-flight never reaches its finally block; reclaim a lock older than 60s.
+    # ponytail: remove+create is not atomic; two renders racing on one stale lock can both refresh once.
+    if ((Test-Path -LiteralPath $lock) -and ([DateTimeOffset]::UtcNow - (Get-Item -LiteralPath $lock).LastWriteTimeUtc).TotalSeconds -gt 60) {
+        Remove-Item -LiteralPath $lock -Recurse -Force -ErrorAction SilentlyContinue
+    }
     try { New-Item -ItemType Directory -Path $lock -ErrorAction Stop | Out-Null } catch { return }
     try {
+        if ((Get-NextRefresh) -gt $now) { return }
+        # Claim the slot before the request so a failure backs off instead of retrying on every render.
+        Set-Content -LiteralPath $nextRefreshFile -Value ($now + $fableRefreshSeconds) -NoNewline
         $response = Invoke-RestMethod -Uri ($env:BRAISENLY_STATUSLINE_USAGE_URL ?? 'https://api.anthropic.com/api/oauth/usage') -Headers @{
             Authorization = "Bearer $token"
             'anthropic-beta' = 'oauth-2025-04-20'
@@ -89,7 +105,10 @@ function Refresh-Fable {
             $cache | ConvertTo-Json -Compress | Set-Content -LiteralPath $tmp -Encoding utf8
             Move-Item -LiteralPath $tmp -Destination $fableCache -Force
         }
-    } catch { }
+    } catch {
+        $retry = $_.Exception.Response.Headers.RetryAfter.Delta.TotalSeconds
+        if ($retry -gt $fableRefreshSeconds) { Set-Content -LiteralPath $nextRefreshFile -Value ($now + [int64]$retry) -NoNewline }
+    }
     finally { Remove-Item -LiteralPath $lock -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
@@ -105,12 +124,7 @@ if (Test-Path -LiteralPath $fableCache) {
 }
 
 if (-not $env:BRAISENLY_STATUSLINE_DISABLE_REFRESH) {
-    $needsRefresh = $true
-    if (Test-Path -LiteralPath $fableCache) {
-        $cacheAge = ([DateTimeOffset]::UtcNow - (Get-Item -LiteralPath $fableCache).LastWriteTimeUtc).TotalSeconds
-        $needsRefresh = $cacheAge -ge $fableRefreshSeconds
-    }
-    if ($needsRefresh) {
+    if ((Get-NextRefresh) -le [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) {
         Start-Process -FilePath 'pwsh' -ArgumentList "-NoProfile -NonInteractive -File `"$PSCommandPath`" -RefreshFable" -WindowStyle Hidden
     }
 }
@@ -125,7 +139,6 @@ $C_SEP   = "$ESC[38;5;237m"             # separator pipe
 $C_VAL   = "$ESC[38;5;243m"             # dim value text
 $C_EMPTY = "$ESC[38;5;59m"              # medium gray empty cells
 
-$PARTIAL = @('', '▏', '▎', '▍', '▌', '▋', '▊', '▉')
 
 function Get-CellColor([int]$pos) {
     if ($pos -le 50) {
@@ -168,30 +181,22 @@ function Format-Bytes([long]$b) {
 
 # Get-Bar — when -Inverted is 1, per-cell gradient is reversed (left=red, right=green).
 function Get-Bar([int]$pct, [int]$width = 20, [int]$inverted = 0) {
-    $eighths    = [int]($pct * $width * 8 / 100)
-    $full       = [int]($eighths / 8)
-    $partIdx    = $eighths % 8
-    $emptyStart = $full + $(if ($partIdx -gt 0) { 1 } else { 0 })
+    $pct = [math]::Max(0, [math]::Min(100, $pct))
+    # Whole cells only: an eighth-block glyph leaves a blank gap before the ░ track.
+    $full = [int][math]::Floor(($pct * $width + 50) / 100)
+    if ($pct -gt 0 -and $full -eq 0) { $full = 1 }
     $out = "["
-    for ($i = 0; $i -lt $full -and $i -lt $width; $i++) {
+    for ($i = 0; $i -lt $full; $i++) {
         if ($inverted -eq 1) {
-            $pos = 100 - [int]($i * 100 / $width)
+            $pos = 100 - [int][math]::Floor($i * 100 / $width)
         } else {
-            $pos = [int]($i * 100 / $width)
+            $pos = [int][math]::Floor($i * 100 / $width)
         }
         $out += "$(Get-CellColor $pos)█"
     }
-    if ($full -lt $width -and $partIdx -gt 0) {
-        if ($inverted -eq 1) {
-            $pos = 100 - [int]($full * 100 / $width)
-        } else {
-            $pos = [int]($full * 100 / $width)
-        }
-        $out += "$(Get-CellColor $pos)$($PARTIAL[$partIdx])"
-    }
-    if ($emptyStart -lt $width) {
+    if ($full -lt $width) {
         $out += $C_EMPTY
-        $out += '░' * ($width - $emptyStart)
+        $out += '░' * ($width - $full)
     }
     $out += "${R}]"
     return $out
@@ -246,9 +251,9 @@ $out += Get-Sep
 $out += "${C_LABEL}ctx${R} "
 if ($null -ne $usedPct -and $ctxSize -gt 0) {
     $ui   = [int][math]::Round($usedPct)
-    $out += "$(Get-Bar $ui 20) ${C_VAL}$(Format-Bytes $totalIn)${R}/${C_VAL}$(Format-Bytes $ctxSize)${R} ($(Format-PctText $ui))"
+    $out += "$(Get-Bar $ui 12) ${C_VAL}$(Format-Bytes $totalIn)${R}/${C_VAL}$(Format-Bytes $ctxSize)${R} ($(Format-PctText $ui))"
 } else {
-    $out += Get-Bar 0 20
+    $out += Get-Bar 0 12
 }
 
 # Disk space — platform-aware
@@ -257,7 +262,7 @@ if ($IsWindows) {
     if ($drive -and ($drive.Used + $drive.Free) -gt 0) {
         $total = $drive.Used + $drive.Free
         $dp    = [int]($drive.Used * 100 / $total)
-        $out  += "$(Get-Sep)${C_LABEL}disk${R} $(Get-Bar $dp 15) ${C_VAL}$(Format-Bytes ([long]$drive.Free))${R} free"
+        $out  += "$(Get-Sep)${C_LABEL}disk${R} $(Get-Bar $dp 12) ${C_VAL}$(Format-Bytes ([long]$drive.Free))${R} free"
     }
 } else {
     # macOS / Linux
@@ -267,7 +272,7 @@ if ($IsWindows) {
         $dt = [long]$parts[1]; $da = [long]$parts[3]
         if ($dt -gt 0) {
             $dp   = [int](($dt - $da) * 100 / $dt)
-            $out += "$(Get-Sep)${C_LABEL}disk${R} $(Get-Bar $dp 15) ${C_VAL}$(Format-Bytes ($da * 1024))${R} free"
+            $out += "$(Get-Sep)${C_LABEL}disk${R} $(Get-Bar $dp 12) ${C_VAL}$(Format-Bytes ($da * 1024))${R} free"
         }
     }
     $tfOut = (df -k /tmp 2>$null | Select-Object -Last 1)
