@@ -41,6 +41,9 @@ bump() {
   [[ -e $settings.bsl-backup ]] || cp -p "$settings" "$settings.bsl-backup" 2>/dev/null
   tmp=$settings.tmp.$$
   before=$(digest "$settings")
+  # Create the temp file private, then copy the original mode so the rename never loosens permissions.
+  (umask 077; : >"$tmp") || return 0
+  mode=$(stat -c %a "$settings" 2>/dev/null || stat -f %OLp "$settings" 2>/dev/null); [[ -n $mode ]] && chmod "$mode" "$tmp"
   # Strip any previous nonce, then append the new one. Leave every other key untouched.
   jq --arg n " # bsl-cols=$1" '
     if (.statusLine.command? // "") | type == "string" and length > 0

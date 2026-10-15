@@ -183,12 +183,6 @@ function Get-CellColor([int]$pos) {
     return "$ESC[38;2;${r};${g};${b}m"
 }
 
-function Get-PctColor([int]$p) {
-    if ($p -le 60) { return "$ESC[38;2;60;180;80m" }
-    if ($p -le 80) { return "$ESC[38;2;200;160;0m" }
-    return "$ESC[38;2;180;60;40m"
-}
-
 # The number always carries the heat colour of its bar tip, bar shown or not.
 function Format-PctText([int]$p) {
     return "$(Get-CellColor $p)${p}%${R}"

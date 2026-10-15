@@ -1,6 +1,6 @@
 ---
 name: configure-statusline
-description: Configures, previews, resets, installs, or uninstalls the Braisenly Claude Code status line, including segment order, visibility, labels, colored percentage thresholds, RGB colors, and indicator lengths. Use for requests such as "make my Claude status bars shorter", "show Fable usage", or "change statusline colors".
+description: Configures, previews, resets, installs, or uninstalls the Braisenly Claude Code status line, including segment order, visibility, labels, indicator lengths, terminal fitting, and the resize watcher. Use for requests such as "make my Claude status bars shorter", "show Fable usage", or "make the status line fit my split pane".
 compatibility: Requires bash and jq; Fable refresh additionally requires curl and Claude Code OAuth credentials.
 ---
 
@@ -23,10 +23,9 @@ Edit `statusline.json` atomically. Start from `statusline.example.json` when abs
 - `segments`: unique ordered subset of `model`, `profile`, `cwd`, `context`, `disk`, `tmp`, `five_hour`, `seven_day`, `fable`. Omission hides a segment.
 - `labels`: string labels keyed by segment.
 - `widths`: integer indicator lengths from 1 through 128.
-- `thresholds.usage`: `0 <= warn <= critical <= 100`.
 - `fit`: `rows` (1 or 2, default 1), `reserve` cells (0 through 200) held back from the `COLUMNS` budget, `min_bar_cells` (1 through 128), `ladder` (ordered subset of the exclusion steps below), and `resize_watch` boolean (default false). Fit order at every render with `rows: 1`: full bars; bars shrink uniformly down to the floor; bars drop and percentages take the bar heat colour; ladder steps apply one at a time until the line fits; then the floor. With `rows: 2` a second aligned row (labels and bars above, values below) is tried before any shrinking, and the ladder first runs with bars kept at the largest size that fits before bars drop. Rows are space-padded to the budget once any fitting engages.
 - Ladder steps, default order: `disk_label`, `ctx_int`, `no_parens`, `disk_int`, `ctx_no_total`, `no_free`, `fable_short`, `disk_value`, `ctx_no_used`, `fable_label`, `fable_segment`, `seven_label`, `five_label`, `ctx_label`, `seven_segment`, `five_segment`. Unknown names reject the config.
-- `colors`: `ok`, `warn`, and `critical`, each exactly three integer Red-Green-Blue values from 0 through 255.
+- Percentages always take the gradient colour of their bar tip. `thresholds` and `colors` from older configs are ignored; remove them when touching the file.
 - `fable`: model display name, refresh interval of at least 60 seconds, and maximum stale interval of at least 60 seconds.
 
 Report an exact validation error before changing invalid input. Keep existing values not mentioned by user.

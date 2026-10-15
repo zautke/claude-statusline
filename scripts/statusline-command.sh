@@ -29,8 +29,6 @@ valid_config() {
     ($s|type)=="array" and ($s|all(type=="string" and IN(known[]))) and (($s|unique|length)==($s|length)) and
     ((.labels//{})|to_entries|all(.value|type=="string")) and
     ((.widths//{})|to_entries|all(.value|type=="number" and floor==. and .>=1 and .<=128)) and
-    ((.thresholds.usage.warn//60)>=0) and ((.thresholds.usage.warn//60)<=(.thresholds.usage.critical//80)) and ((.thresholds.usage.critical//80)<=100) and
-    ((.colors//{})|to_entries|all(.value|type=="array" and length==3 and all(type=="number" and floor==. and .>=0 and .<=255))) and
     ((.fit.reserve//0)|type=="number" and floor==. and .>=0 and .<=200) and ((.fit.min_bar_cells//5)|type=="number" and floor==. and .>=1 and .<=128) and ((.fit.resize_watch//false)|type=="boolean") and ((.fit.rows//1)|IN(1,2)) and
     ((.fit.ladder//[])|type=="array" and all(IN("disk_label","ctx_int","no_parens","disk_int","ctx_no_total","no_free","fable_short","disk_value","ctx_no_used","fable_label","fable_segment","seven_label","five_label","ctx_label","seven_segment","five_segment"))) and
     ((.fable.refresh_seconds//600)>=60) and ((.fable.max_stale_seconds//86400)>=60)
@@ -52,19 +50,8 @@ get_width() {
 refresh_seconds=$(get_cfg '.fable.refresh_seconds' '600')
 max_stale=$(get_cfg '.fable.max_stale_seconds' '86400')
 fable_model=$(get_cfg '.fable.model' '"Fable"')
-usage_warn=$(get_cfg '.thresholds.usage.warn' '60')
-usage_critical=$(get_cfg '.thresholds.usage.critical' '80')
 fit_reserve=$(get_cfg '.fit.reserve' '0')
 min_bar_cells=$(get_cfg '.fit.min_bar_cells' '5')
-if [[ -n $cfg ]]; then
-  IFS=$'\t' read -r ok_r ok_g ok_b <<<"$(jq -r '(.colors.ok//[60,180,80])|@tsv' "$cfg")"
-  IFS=$'\t' read -r warn_r warn_g warn_b <<<"$(jq -r '(.colors.warn//[200,160,0])|@tsv' "$cfg")"
-  IFS=$'\t' read -r crit_r crit_g crit_b <<<"$(jq -r '(.colors.critical//[180,60,40])|@tsv' "$cfg")"
-else
-  read -r ok_r ok_g ok_b <<<"60 180 80"
-  read -r warn_r warn_g warn_b <<<"200 160 0"
-  read -r crit_r crit_g crit_b <<<"180 60 40"
-fi
 
 oauth_token() {
   if [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then printf '%s' "$CLAUDE_CODE_OAUTH_TOKEN"; return; fi
