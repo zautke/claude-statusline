@@ -1,6 +1,6 @@
 #!/usr/bin/env pwsh
 # Claude Code statusline — PowerShell 7+ port of statusline-command.sh
-# Feature-parity: RGB gradient bars, sub-pixel precision, disk/tmp/rate-limit/drift sections.
+# Feature-parity: RGB gradient bars, disk/tmp/rate-limit/Fable sections, COLUMNS-aware bar fitting.
 
 param(
     [Alias('r')][switch]$RefreshFable,
@@ -38,15 +38,35 @@ $fableModel = 'Fable'
 $fableWidth = 12
 $fableRefreshSeconds = 600
 $fableMaxStale = 86400
+$fitReserve = 0
+$minBarCells = 5
+$resizeWatch = $false
 $configPath = Join-Path $configDir 'statusline.json'
 if (Test-Path -LiteralPath $configPath) {
     try {
         $cfg = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+        # All-or-nothing, as in the Bash renderer: any invalid fit field rejects the whole file.
+        $knownLadder = @('disk_label','ctx_int','no_parens','disk_int','ctx_no_total','no_free','fable_short','disk_value','ctx_no_used','fable_label','fable_segment','seven_label','five_label','ctx_label','seven_segment','five_segment')
+        function Test-Int($v) { return ($v -is [int] -or $v -is [long]) }
+        if ($null -ne $cfg.fit) {
+            if ($cfg.fit -isnot [System.Management.Automation.PSCustomObject]) { throw 'invalid fit' }
+            if ($null -ne $cfg.fit.rows -and -not (Test-Int $cfg.fit.rows)) { throw 'invalid fit.rows' }
+            if ($null -ne $cfg.fit.reserve -and -not (Test-Int $cfg.fit.reserve)) { throw 'invalid fit.reserve' }
+            if ($null -ne $cfg.fit.min_bar_cells -and -not (Test-Int $cfg.fit.min_bar_cells)) { throw 'invalid fit.min_bar_cells' }
+            if ($null -ne $cfg.fit.ladder -and (-not ($cfg.fit.ladder -is [array]) -or @($cfg.fit.ladder | Where-Object { $_ -notin $knownLadder }).Count -gt 0)) { throw 'invalid fit.ladder' }
+            if ($null -ne $cfg.fit.rows -and $cfg.fit.rows -notin 1, 2) { throw 'invalid fit.rows' }
+            if ($null -ne $cfg.fit.reserve -and ($cfg.fit.reserve -lt 0 -or $cfg.fit.reserve -gt 200)) { throw 'invalid fit.reserve' }
+            if ($null -ne $cfg.fit.min_bar_cells -and ($cfg.fit.min_bar_cells -lt 1 -or $cfg.fit.min_bar_cells -gt 128)) { throw 'invalid fit.min_bar_cells' }
+            if ($null -ne $cfg.fit.resize_watch -and $cfg.fit.resize_watch -isnot [bool]) { throw 'invalid fit.resize_watch' }
+        }
         if ($cfg.fable.model) { $fableModel = [string]$cfg.fable.model; $fableLabel = $fableModel }
         if ($cfg.widths.fable) { $fableWidth = [int]$cfg.widths.fable }
+        if ($null -ne $cfg.fit.reserve) { $fitReserve = [int]$cfg.fit.reserve }
+        if ($cfg.fit.min_bar_cells) { $minBarCells = [int]$cfg.fit.min_bar_cells }
+        if ($cfg.fit.resize_watch -eq $true) { $resizeWatch = $true }
         if ($cfg.fable.refresh_seconds) { $fableRefreshSeconds = [int64]$cfg.fable.refresh_seconds }
         if ($cfg.fable.max_stale_seconds) { $fableMaxStale = [int64]$cfg.fable.max_stale_seconds }
-    } catch { }
+    } catch { $cfg = $null; $fableModel = 'Fable'; $fableLabel = 'Fable'; $fableWidth = 12; $fitReserve = 0; $minBarCells = 5; $resizeWatch = $false; $fableRefreshSeconds = 600; $fableMaxStale = 86400 }
 }
 $fableCache = Join-Path $cacheRoot 'braisenly-statusline/fable.json'
 
@@ -129,6 +149,38 @@ if (-not $env:BRAISENLY_STATUSLINE_DISABLE_REFRESH) {
     }
 }
 
+# One resize watcher per Claude Code process: walk up the parent chain to claude, lock on its pid.
+# Opt-in: the watcher rewrites settings.json on resize, so it is off unless fit.resize_watch is true.
+if ($resizeWatch -and -not $env:BRAISENLY_STATUSLINE_DISABLE_WATCH) {
+    try {
+        $proc = Get-Process -Id $PID
+        for ($i = 0; $i -lt 6 -and $proc; $i++) {
+            if ($proc.ProcessName -like 'claude*') { break }
+            $parentId = (Get-CimInstance Win32_Process -Filter "ProcessId = $($proc.Id)").ParentProcessId
+            $proc = if ($parentId) { Get-Process -Id $parentId -ErrorAction SilentlyContinue } else { $null }
+        }
+        if ($proc -and $proc.ProcessName -like 'claude*') {
+            $watchDir = Join-Path $cacheRoot 'braisenly-statusline'
+            New-Item -ItemType Directory -Force -Path $watchDir | Out-Null
+            $lock = Join-Path $watchDir "resize-watch.$($proc.Id).pid"
+            # Two overlapping renders must not both spawn: the directory create is the atomic mutex around check-and-spawn.
+            $mutex = $null
+            # A render killed mid-spawn never removes it; reclaim a mutex older than 60s.
+            if ((Test-Path -LiteralPath "$lock.spawn") -and ([DateTime]::UtcNow - (Get-Item -LiteralPath "$lock.spawn").LastWriteTimeUtc).TotalSeconds -gt 60) { Remove-Item -LiteralPath "$lock.spawn" -Force -ErrorAction SilentlyContinue }
+            try { $mutex = New-Item -ItemType Directory -Path "$lock.spawn" -ErrorAction Stop } catch { }
+            if ($mutex) {
+                try {
+                    $alive = (Test-Path -LiteralPath $lock) -and (Get-Process -Id ([int](Get-Content -LiteralPath $lock -Raw)) -ErrorAction SilentlyContinue)
+                    if (-not $alive) {
+                        $watcher = Start-Process -FilePath 'pwsh' -ArgumentList "-NoProfile -NonInteractive -File `"$(Join-Path $PSScriptRoot 'resize-watch.ps1')`" -ClaudePid $($proc.Id) -Settings `"$(Join-Path $configDir 'settings.json')`"" -WindowStyle Hidden -PassThru
+                        Set-Content -LiteralPath $lock -Value $watcher.Id -NoNewline
+                    }
+                } finally { Remove-Item -LiteralPath "$lock.spawn" -Force -ErrorAction SilentlyContinue }
+            }
+        }
+    } catch { }
+}
+
 $input_data = [Console]::In.ReadToEnd()
 
 $ESC     = [char]27
@@ -154,22 +206,9 @@ function Get-CellColor([int]$pos) {
     return "$ESC[38;2;${r};${g};${b}m"
 }
 
-function Get-PctColor([int]$p) {
-    if ($p -le 60) { return "$ESC[38;2;60;180;80m" }
-    if ($p -le 80) { return "$ESC[38;2;200;160;0m" }
-    return "$ESC[38;2;180;60;40m"
-}
-
+# The number always carries the heat colour of its bar tip, bar shown or not.
 function Format-PctText([int]$p) {
-    return "$(Get-PctColor $p)${p}%${R}"
-}
-
-# Format-DriftPctText — inverted thresholds (drift-high = good = green)
-function Format-DriftPctText([int]$p) {
-    if     ($p -ge 90) { $c = "$ESC[38;2;60;180;80m" }
-    elseif ($p -ge 70) { $c = "$ESC[38;2;200;160;0m" }
-    else               { $c = "$ESC[38;2;180;60;40m" }
-    return "${c}${p}%${R}"
+    return "$(Get-CellColor $p)${p}%${R}"
 }
 
 function Format-Bytes([long]$b) {
@@ -204,6 +243,32 @@ function Get-Bar([int]$pct, [int]$width = 20, [int]$inverted = 0) {
 
 function Get-Sep { return "${C_SEP} ● ${R}" }
 
+# Fit state: $barsOff drops every bar; $scaleNum/$scaleDen shrink configured widths uniformly.
+$script:barsOff = $false
+$script:scaleNum = 1
+$script:scaleDen = 1
+function Get-FitBar([int]$pct, [int]$width) {
+    if ($script:barsOff) { return '' }
+    return Get-Bar $pct ([math]::Max(1, [int][math]::Floor($width * $script:scaleNum / $script:scaleDen)))
+}
+# Display cells of a rendered row: strip SGR, count chars (all glyphs used are single-width BMP).
+# Wide (2-cell) code points: East Asian Wide/Fullwidth blocks and emoji presentation ranges; everything else is 1 cell.
+function Test-Wide([int]$cp) {
+    return (($cp -ge 0x1100 -and $cp -le 0x115F) -or ($cp -ge 0x2E80 -and $cp -le 0xA4CF -and $cp -ne 0x303F) -or ($cp -ge 0xAC00 -and $cp -le 0xD7A3) -or
+            ($cp -ge 0xF900 -and $cp -le 0xFAFF) -or ($cp -ge 0xFE30 -and $cp -le 0xFE4F) -or ($cp -ge 0xFF00 -and $cp -le 0xFF60) -or ($cp -ge 0xFFE0 -and $cp -le 0xFFE6) -or
+            ($cp -ge 0x1F300 -and $cp -le 0x1F64F) -or ($cp -ge 0x1F900 -and $cp -le 0x1F9FF) -or ($cp -ge 0x20000 -and $cp -le 0x3FFFD))
+}
+function Get-Cells([string]$s) {
+    $plain = $s -replace "$ESC\[[0-9;]*m", ''
+    $n = 0
+    for ($i = 0; $i -lt $plain.Length; $i++) {
+        $cp = [char]::ConvertToUtf32($plain, $i)
+        if ($cp -gt 0xFFFF) { $i++ }
+        $n += (Test-Wide $cp) ? 2 : 1
+    }
+    return $n
+}
+
 # Parse JSON — no jq needed
 $j       = $input_data | ConvertFrom-Json
 $model   = if ($j.model.display_name) { $j.model.display_name } else { "Claude" }
@@ -212,116 +277,173 @@ $totalIn = $j.context_window.total_input_tokens
 $ctxSize = $j.context_window.context_window_size
 $rl5h    = $j.rate_limits.five_hour.used_percentage
 $rl7d    = $j.rate_limits.seven_day.used_percentage
-$sessionId = $j.session_id
 
-# drift quotient — independent co-agent coherence score for this session
-$driftScore = $null
-$driftTag = 'baseline'
-$driftProvider = ''
-if ($sessionId) {
-    $driftFile = Join-Path $HOME ".claude/state/drift/$sessionId.jsonl"
-    if (Test-Path $driftFile) {
-        $last = Get-Content $driftFile -Tail 30 -ErrorAction SilentlyContinue |
-            ForEach-Object { try { $_ | ConvertFrom-Json } catch {} } |
-            Where-Object { $_ -and $_.kind -eq 'score' } |
-            Select-Object -Last 1
-        if ($last) {
-            $driftScore = [int]$last.score
-            $driftTag = [string]$last.tag
-            if ($last.PSObject.Properties['provider']) {
-                $driftProvider = [string]$last.provider
-            }
-        }
-    }
-}
-
-$out = "${C_MODEL}${model}${R}"
-
-# Current directory
-$_cwd = $PWD.Path -replace [regex]::Escape($HOME), '~'
-$_cwd = $_cwd -replace '\\', '/'
-if ($_cwd.Length -gt 30) {
+# ---- values computed once; the fit loop below only assembles strings ----
+$cwdText = $PWD.Path -replace [regex]::Escape($HOME), '~'
+$cwdText = $cwdText -replace '\\', '/'
+if ($cwdText.Length -gt 30) {
     $parts = $PWD.Path -split '[/\\]' | Where-Object { $_ -ne '' }
-    $_cwd = if ($parts.Count -ge 2) { "…/$($parts[-2])/$($parts[-1])" } else { "/$($parts[-1])" }
+    $cwdText = if ($parts.Count -ge 2) { "…/$($parts[-2])/$($parts[-1])" } else { "/$($parts[-1])" }
 }
-$out += "$(Get-Sep)${C_VAL}${_cwd}${R}"
-
-# Context window
-$out += Get-Sep
-$out += "${C_LABEL}ctx${R} "
+function Format-BytesD([long]$b, [int]$d) {
+    if ($b -ge 1073741824) { return ("{0:F$d}G" -f ($b / 1073741824)) }
+    if ($b -ge 1048576)    { return ("{0:F$d}M" -f ($b / 1048576)) }
+    if ($b -ge 1024)       { return ("{0:F$d}K" -f ($b / 1024)) }
+    return "${b}B"
+}
+$ctxPct = $null
 if ($null -ne $usedPct -and $ctxSize -gt 0) {
-    $ui   = [int][math]::Round($usedPct)
-    $out += "$(Get-Bar $ui 12) ${C_VAL}$(Format-Bytes $totalIn)${R}/${C_VAL}$(Format-Bytes $ctxSize)${R} ($(Format-PctText $ui))"
-} else {
-    $out += Get-Bar 0 12
+    $ctxPct = [int][math]::Round($usedPct)
+    $ctxUsed1 = Format-BytesD $totalIn 1; $ctxUsed0 = Format-BytesD $totalIn 0
+    $ctxTotal1 = Format-BytesD $ctxSize 1; $ctxTotal0 = Format-BytesD $ctxSize 0
 }
-
-# Disk space — platform-aware
+$diskPct = $null; $tmpPct = $null
 if ($IsWindows) {
     $drive = Get-PSDrive C -ErrorAction SilentlyContinue
     if ($drive -and ($drive.Used + $drive.Free) -gt 0) {
-        $total = $drive.Used + $drive.Free
-        $dp    = [int]($drive.Used * 100 / $total)
-        $out  += "$(Get-Sep)${C_LABEL}disk${R} $(Get-Bar $dp 12) ${C_VAL}$(Format-Bytes ([long]$drive.Free))${R} free"
+        $diskPct = [int]($drive.Used * 100 / ($drive.Used + $drive.Free))
+        $diskFree1 = Format-BytesD ([long]$drive.Free) 1; $diskFree0 = Format-BytesD ([long]$drive.Free) 0
     }
 } else {
-    # macOS / Linux
     $dfOut = (df -k / 2>$null | Select-Object -Last 1)
     if ($dfOut) {
-        $parts = ($dfOut -split '\s+')
-        $dt = [long]$parts[1]; $da = [long]$parts[3]
-        if ($dt -gt 0) {
-            $dp   = [int](($dt - $da) * 100 / $dt)
-            $out += "$(Get-Sep)${C_LABEL}disk${R} $(Get-Bar $dp 12) ${C_VAL}$(Format-Bytes ($da * 1024))${R} free"
-        }
+        $parts = ($dfOut -split '\s+'); $dt = [long]$parts[1]; $da = [long]$parts[3]
+        if ($dt -gt 0) { $diskPct = [int](($dt - $da) * 100 / $dt); $diskFree1 = Format-BytesD ($da * 1024) 1; $diskFree0 = Format-BytesD ($da * 1024) 0 }
     }
     $tfOut = (df -k /tmp 2>$null | Select-Object -Last 1)
-    $tmpDev = if ($tfOut) { ($tfOut -split '\s+')[0] } else { '' }
-    if ($tfOut -and $tmpDev -eq 'tmpfs') {
-        $parts = ($tfOut -split '\s+')
-        $tt = [long]$parts[1]; $ta = [long]$parts[3]
-        if ($tt -gt 0) {
-            $tp   = [int](($tt - $ta) * 100 / $tt)
-            $out += "$(Get-Sep)${C_LABEL}/tmp${R} $(Get-Bar $tp 15) ${C_VAL}$(Format-Bytes ($ta * 1024))${R} free"
+    if ($tfOut -and (($tfOut -split '\s+')[0] -eq 'tmpfs')) {
+        $parts = ($tfOut -split '\s+'); $tt = [long]$parts[1]; $ta = [long]$parts[3]
+        if ($tt -gt 0) { $tmpPct = [int](($tt - $ta) * 100 / $tt); $tmpFree1 = Format-BytesD ($ta * 1024) 1; $tmpFree0 = Format-BytesD ($ta * 1024) 0 }
+    }
+}
+$fivePct = if ($null -ne $rl5h) { [int][math]::Round($rl5h) } else { $null }
+$sevenPct = if ($null -ne $rl7d) { [int][math]::Round($rl7d) } else { $null }
+
+# ---- exclusion ladder: ordered flags the builders consult; each step buys cells when nothing else fits ----
+$defaultLadder = @('disk_label','ctx_int','no_parens','disk_int','ctx_no_total','no_free','fable_short','disk_value','ctx_no_used','fable_label','fable_segment','seven_label','five_label','ctx_label','seven_segment','five_segment')
+$ladder = $defaultLadder; $fitRows = 1
+if ($cfg) {
+    if ($cfg.fit.ladder -is [array]) { $ladder = @($cfg.fit.ladder) }
+    if ($cfg.fit.rows -in 1, 2) { $fitRows = [int]$cfg.fit.rows }
+}
+$script:F = @{}
+function Get-Paren([string]$s) { if ($script:F['no_parens']) { return $s } else { return "($s)" } }
+function Add-Bar([string]$top, [string]$bar) { if ($bar) { return ($top ? "$top $bar" : $bar) } else { return $top } }
+
+# Builders fill $segTop (label + bar) and $segBot (values). A segment with both empty is omitted.
+function Build {
+    $script:segTop = [System.Collections.Generic.List[string]]::new()
+    $script:segBot = [System.Collections.Generic.List[string]]::new()
+    $segments = @('model', 'cwd', 'context', 'disk', 'tmp', 'five_hour', 'seven_day', 'fable')
+    foreach ($s in $segments) {
+        $top = ''; $bot = ''
+        switch ($s) {
+            'model' { $top = "${C_MODEL}${model}${R}" }
+            'cwd'   { $top = "${C_VAL}${cwdText}${R}" }
+            'context' {
+                if (-not $F['ctx_label']) { $top = "${C_LABEL}ctx${R}" }
+                if ($null -ne $ctxPct) {
+                    $top = Add-Bar $top (Get-FitBar $ctxPct 12)
+                    $used = $F['ctx_int'] ? $ctxUsed0 : $ctxUsed1; $total = $F['ctx_int'] ? $ctxTotal0 : $ctxTotal1
+                    if (-not $F['ctx_no_used']) { $bot = "${C_VAL}${used}${R}" }
+                    if (-not $F['ctx_no_total']) { $bot += "${C_VAL}$($bot ? '/' : '')${total}${R}" }
+                    $bot += ($bot ? ' ' : '') + (Get-Paren (Format-PctText $ctxPct))
+                } else { $top = Add-Bar $top (Get-FitBar 0 12) }
+            }
+            { $_ -in 'disk', 'tmp' } {
+                if ($s -eq 'disk') { $pct = $diskPct; $free1 = $diskFree1; $free0 = $diskFree0; $L = 'disk'; $W = 12 } else { $pct = $tmpPct; $free1 = $tmpFree1; $free0 = $tmpFree0; $L = '/tmp'; $W = 15 }
+                if ($null -eq $pct) { continue }
+                if (-not $F['disk_label']) { $top = "${C_LABEL}${L}${R}" }
+                $top = Add-Bar $top (Get-FitBar $pct $W)
+                if (-not $F['disk_value']) { $bot = "${C_VAL}$($F['disk_int'] ? $free0 : $free1)${R}"; if (-not $F['no_free']) { $bot += ' free' } }
+            }
+            'five_hour' {
+                if ($null -eq $fivePct -or $F['five_segment']) { continue }
+                if (-not $F['five_label']) { $top = "${C_LABEL}5h${R}" }
+                $top = Add-Bar $top (Get-FitBar $fivePct 12); $bot = Get-Paren (Format-PctText $fivePct)
+            }
+            'seven_day' {
+                if ($null -eq $sevenPct -or $F['seven_segment']) { continue }
+                if (-not $F['seven_label']) { $top = "${C_LABEL}7d${R}" }
+                $top = Add-Bar $top (Get-FitBar $sevenPct 12); $bot = Get-Paren (Format-PctText $sevenPct)
+            }
+            'fable' {
+                if ($F['fable_segment']) { continue }
+                if ($F['fable_label']) { } elseif ($F['fable_short']) { $top = "${C_LABEL}$($fableLabel.Substring(0, ([char]::IsHighSurrogate($fableLabel, 0) ? 2 : 1)))${R}" } else { $top = "${C_LABEL}${fableLabel}${R}" }
+                if ($null -ne $fablePct) { $top = Add-Bar $top (Get-FitBar $fablePct $fableWidth); $bot = Get-Paren (Format-PctText $fablePct) }
+                else { $top = Add-Bar $top (Get-FitBar 0 $fableWidth); $bot = Get-Paren 'n/a' }
+            }
         }
+        if (-not ($top + $bot)) { continue }
+        $script:segTop.Add($top); $script:segBot.Add($bot)
     }
 }
-
-# Rate limits (hidden when absent — Claude.ai subscribers only)
-if ($null -ne $rl5h) {
-    $v    = [int][math]::Round($rl5h)
-    $out += "$(Get-Sep)${C_LABEL}5h${R} $(Get-Bar $v 12) ($(Format-PctText $v))"
+# flat: one row, "top bot" per segment. stacked: two rows, each segment padded to max(top,bot) so columns align.
+function Assemble-Flat {
+    $parts = for ($i = 0; $i -lt $segTop.Count; $i++) { $t = $segTop[$i]; $b = $segBot[$i]; if ($t -and $b) { "$t $b" } else { "$t$b" } }
+    $script:row1 = $parts -join (Get-Sep); $script:row2 = ''
 }
-if ($null -ne $rl7d) {
-    $v    = [int][math]::Round($rl7d)
-    $out += "$(Get-Sep)${C_LABEL}7d${R} $(Get-Bar $v 12) ($(Format-PctText $v))"
-}
-
-# Fable usage — show empty bar while cache is unavailable; never invent a percentage.
-$out += Get-Sep
-$out += "${C_LABEL}${fableLabel}${R} "
-if ($null -ne $fablePct) {
-    $out += "$(Get-Bar $fablePct $fableWidth) ($(Format-PctText $fablePct))"
-} else {
-    $out += "$(Get-Bar 0 $fableWidth) (n/a)"
-}
-
-# drift quotient block — inverted bar (high = good = green-filled)
-# ◆ marker = Anthropic Haiku primary; ◇ marker = Ollama fallback.
-# Bar is 10 cells (compact) — tag and percentage trail to the right.
-$out += Get-Sep
-$out += "${C_LABEL}drift${R} "
-if ($null -ne $driftScore) {
-    $provMarker = switch ($driftProvider) {
-        'groq'      { '⬢' }
-        'gemini'    { '◉' }
-        'openai'    { '◈' }
-        'ollama'    { '◇' }
-        default     { '·' }
+function Assemble-Stacked {
+    $r1 = @(); $r2 = @()
+    for ($i = 0; $i -lt $segTop.Count; $i++) {
+        $t = $segTop[$i]; $b = $segBot[$i]; $wt = Get-Cells $t; $wb = Get-Cells $b; $w = [math]::Max($wt, $wb)
+        $r1 += $t + (' ' * ($w - $wt)); $r2 += $b + (' ' * ($w - $wb))
     }
-    $out += "$(Get-Bar $driftScore 10 1) ${C_VAL}(${driftTag}${provMarker})${R} ($(Format-DriftPctText $driftScore))"
-} else {
-    $out += "$(Get-Bar 100 10 1) ${C_VAL}(baseline)${R}"
+    $script:row1 = $r1 -join (Get-Sep); $script:row2 = $r2 -join (Get-Sep)
+    # Claude Code trims leading whitespace per row; pad row starts with U+2800 (renders blank, counts one cell).
+    $script:row1 = [regex]::Replace($script:row1, '^ +', { param($m) [string]::new([char]0x2800, $m.Length) })
+    $script:row2 = [regex]::Replace($script:row2, '^ +', { param($m) [string]::new([char]0x2800, $m.Length) })
 }
 
-[Console]::WriteLine($out)
+# ---- fit pipeline: try flat then stacked at each stage; stop at the first that fits ----
+function Emit { [Console]::WriteLine($script:row1); if ($script:row2) { [Console]::WriteLine($script:row2) }; exit 0 }
+function Test-Fits { return ((Get-Cells $script:row1) -le $budget) }
+function Try-Layouts { Build; Assemble-Flat; if (Test-Fits) { return $true }; if ($fitRows -ge 2) { Assemble-Stacked; if (Test-Fits) { return $true } }; return $false }
+function Pad-Rows {
+    $n = Get-Cells $script:row1; if ($n -lt $budget) { $script:row1 += ' ' * ($budget - $n) }
+    if ($script:row2) { $n = Get-Cells $script:row2; if ($n -lt $budget) { $script:row2 += ' ' * ($budget - $n) } }
+}
+
+$columns = 0
+if ($env:COLUMNS -match '^\d+$') { $columns = [int]$env:COLUMNS }
+# Native Windows without COLUMNS: the attached console's visible width (0 when no console is attached).
+if ($columns -le 0) { try { $columns = [Console]::WindowWidth } catch { $columns = 0 } }
+if ($columns -le 0) { Build; Assemble-Flat; Emit }
+$budget = [math]::Max(1, $columns - 3 - $fitReserve)
+# Stage 1: full bars.
+if (Try-Layouts) { Emit }
+# Stage 2: shrink bars uniformly. Walk the shared ratio down one cell at a time (stacked cells are bounded by their
+# value row, so a bar cell does not always buy a column) and stop at the first ratio that fits or breaks the floor.
+$widths = @(12); if ($null -ne $diskPct) { $widths += 12 }; if ($null -ne $tmpPct) { $widths += 15 }; if ($null -ne $fivePct) { $widths += 12 }; if ($null -ne $sevenPct) { $widths += 12 }; $widths += $fableWidth
+$total = ($widths | Measure-Object -Sum).Sum
+# Largest shared ratio in [floor, full] whose layout fits; fits is monotonic in the ratio, so binary search.
+function Shrink-Layout([string]$layout) {
+    $lo = 1; $hi = $total; $best = $null
+    # A bar configured below the floor is exempt from it (it shrinks proportionally, minimum one cell).
+    foreach ($w in $widths) { if ($w -lt $minBarCells) { continue }; $need = [int][math]::Ceiling($minBarCells * $total / $w); if ($need -gt $lo) { $lo = $need } }
+    if ($lo -gt $hi) { $script:scaleNum = 1; $script:scaleDen = 1; return $false }
+    $script:scaleDen = $total
+    while ($lo -le $hi) {
+        $mid = [int][math]::Floor(($lo + $hi) / 2); $script:scaleNum = $mid
+        Build; if ($layout -eq 'flat') { Assemble-Flat } else { Assemble-Stacked }
+        if (Test-Fits) { $best = $mid; $lo = $mid + 1 } else { $hi = $mid - 1 }
+    }
+    if ($null -eq $best) { $script:scaleNum = 1; $script:scaleDen = 1; return $false }
+    $script:scaleNum = $best; Build; if ($layout -eq 'flat') { Assemble-Flat } else { Assemble-Stacked }; return $true
+}
+if ($total -gt 0) {
+    if (Shrink-Layout 'flat') { Pad-Rows; Emit }
+    if ($fitRows -ge 2 -and (Shrink-Layout 'stacked')) { Pad-Rows; Emit }
+}
+# Stage 3 (two rows only): keep the bars. Walk the ladder with bars at the best size that fits each step.
+if ($fitRows -ge 2 -and $total -gt 0) {
+    foreach ($step in $ladder) { $script:F[$step] = $true; if (Shrink-Layout 'stacked') { Pad-Rows; Emit } }
+    $script:F = @{}
+}
+# Stage 4: bars gone; percentages carry the heat colour instead.
+$script:scaleNum = 1; $script:scaleDen = 1; $script:barsOff = $true
+if (Try-Layouts) { Pad-Rows; Emit }
+# Stage 5: exclusion ladder again without bars, one step at a time, re-measured after each.
+foreach ($step in $ladder) { $script:F[$step] = $true; if (Try-Layouts) { Pad-Rows; Emit } }
+# Floor: nothing left to give; Claude Code truncates the overflow.
+Build; Assemble-Flat; Emit
