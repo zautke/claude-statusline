@@ -418,7 +418,7 @@ $total = ($widths | Measure-Object -Sum).Sum
 function Shrink-Layout([string]$layout) {
     $lo = 1; $hi = $total; $best = $null
     # A bar configured below the floor is exempt from it (it shrinks proportionally, minimum one cell).
-    foreach ($w in $widths) { if ($w -le $minBarCells) { continue }; $need = [int][math]::Ceiling($minBarCells * $total / $w); if ($need -gt $lo) { $lo = $need } }
+    foreach ($w in $widths) { if ($w -lt $minBarCells) { continue }; $need = [int][math]::Ceiling($minBarCells * $total / $w); if ($need -gt $lo) { $lo = $need } }
     if ($lo -gt $hi) { $script:scaleNum = 1; $script:scaleDen = 1; return $false }
     $script:scaleDen = $total
     while ($lo -le $hi) {

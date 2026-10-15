@@ -268,7 +268,7 @@ total=0; for w in $widths; do total=$((total+w)); done
 shrink_layout() { # $1 = flat|stacked. Sets scale and rows on success.
   local lo=1 hi=$total mid w need best=
   # A bar configured below the floor is exempt from it (it shrinks proportionally, minimum one cell).
-  for w in $widths; do ((w>min_bar_cells))||continue; need=$(((min_bar_cells*total+w-1)/w)); ((need>lo))&&lo=$need; done
+  for w in $widths; do ((w>=min_bar_cells))||continue; need=$(((min_bar_cells*total+w-1)/w)); ((need>lo))&&lo=$need; done
   ((lo<=hi))||{ scale_num=1 scale_den=1; return 1; }
   scale_den=$total
   while ((lo<=hi)); do
