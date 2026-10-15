@@ -24,7 +24,8 @@ Edit `statusline.json` atomically. Start from `statusline.example.json` when abs
 - `labels`: string labels keyed by segment.
 - `widths`: integer indicator lengths from 1 through 128.
 - `thresholds.usage`: `0 <= warn <= critical <= 100`.
-- `fit`: `resize_watch` boolean (default false), `reserve` cells (0 through 200) held back from the `COLUMNS` budget, and `min_bar_cells` (1 through 128); bars shrink uniformly to fit `COLUMNS - 3 - reserve`, drop entirely when any bar would fall below the floor, and the line is space-padded to the budget after shrinking.
+- `fit`: `rows` (1 or 2, default 2), `reserve` cells (0 through 200) held back from the `COLUMNS` budget, `min_bar_cells` (1 through 128), `ladder` (ordered subset of the exclusion steps below), and `resize_watch` boolean (default false). Fit order at every render: flat row with full bars; two aligned rows (`rows: 2`) with full bars; bars shrink uniformly down to the floor; bars drop and percentages take the bar heat colour; ladder steps apply one at a time, flat then stacked, until the line fits; then the floor. Rows are space-padded to the budget once any fitting engages.
+- Ladder steps, default order: `disk_label`, `ctx_int`, `no_parens`, `disk_int`, `ctx_no_total`, `no_free`, `fable_short`, `disk_value`, `ctx_no_used`, `fable_label`, `fable_segment`, `seven_label`, `five_label`, `ctx_label`, `seven_segment`, `five_segment`. Unknown names reject the config.
 - `colors`: `ok`, `warn`, and `critical`, each exactly three integer Red-Green-Blue values from 0 through 255.
 - `fable`: model display name, refresh interval of at least 60 seconds, and maximum stale interval of at least 60 seconds.
 

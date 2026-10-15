@@ -31,7 +31,8 @@ valid_config() {
     ((.widths//{})|to_entries|all(.value|type=="number" and floor==. and .>=1 and .<=128)) and
     ((.thresholds.usage.warn//60)>=0) and ((.thresholds.usage.warn//60)<=(.thresholds.usage.critical//80)) and ((.thresholds.usage.critical//80)<=100) and
     ((.colors//{})|to_entries|all(.value|type=="array" and length==3 and all(type=="number" and floor==. and .>=0 and .<=255))) and
-    ((.fit.reserve//0)|type=="number" and floor==. and .>=0 and .<=200) and ((.fit.min_bar_cells//5)|type=="number" and floor==. and .>=1 and .<=128) and ((.fit.resize_watch//false)|type=="boolean") and
+    ((.fit.reserve//0)|type=="number" and floor==. and .>=0 and .<=200) and ((.fit.min_bar_cells//5)|type=="number" and floor==. and .>=1 and .<=128) and ((.fit.resize_watch//false)|type=="boolean") and ((.fit.rows//2)|IN(1,2)) and
+    ((.fit.ladder//[])|type=="array" and all(IN("disk_label","ctx_int","no_parens","disk_int","ctx_no_total","no_free","fable_short","disk_value","ctx_no_used","fable_label","fable_segment","seven_label","five_label","ctx_label","seven_segment","five_segment"))) and
     ((.fable.refresh_seconds//600)>=60) and ((.fable.max_stale_seconds//86400)>=60)
   ' "$config_file" >/dev/null 2>&1
 }
@@ -129,76 +130,148 @@ input=$(cat)
 if [[ -n ${NO_COLOR:-} ]]; then reset= model_color= label_color= sep_color= value_color= empty_color=
 else reset=$'\033[0m'; model_color=$'\033[1;38;5;75m'; label_color=$'\033[38;5;240m'; sep_color=$'\033[38;5;237m'; value_color=$'\033[38;5;243m'; empty_color=$'\033[38;5;59m'; fi
 
-sep() { printf '%s ● %s' "$sep_color" "$reset"; }
-fmt_bytes() { local b=$1; if ((b>=1073741824)); then awk -v b="$b" 'BEGIN{printf "%.1fG",b/1073741824}'; elif ((b>=1048576)); then awk -v b="$b" 'BEGIN{printf "%.1fM",b/1048576}'; elif ((b>=1024)); then awk -v b="$b" 'BEGIN{printf "%.1fK",b/1024}'; else printf '%dB' "$b"; fi; }
-# Gradient colour of a bar cell at position pos (0..100): green, through amber, to red.
-heat_rgb() { local pos=$1 p2; if ((pos<=50)); then printf '%d %d %d' $((40+180*pos/50)) $((170-10*pos/50)) $((60-60*pos/50)); else p2=$((pos-50)); printf '%d %d %d' $((220-40*p2/50)) $((160-160*p2/50)) 0; fi; }
+# ${#var} must count characters, not bytes: pick a UTF-8 locale if the host left us in a byte locale.
+_g='█'; if ((${#_g}!=1)); then for _l in C.UTF-8 en_US.UTF-8; do LC_ALL=$_l; ((${#_g}==1))&&break; done; fi; unset _g _l
+sep="$sep_color ● $reset"
+# fmt_bytes <bytes> [decimals]
+fmt_bytes() { local b=$1 d=${2:-1}; if ((b>=1073741824)); then awk -v b="$b" -v d="$d" 'BEGIN{printf "%.*fG",d,b/1073741824}'; elif ((b>=1048576)); then awk -v b="$b" -v d="$d" 'BEGIN{printf "%.*fM",d,b/1048576}'; elif ((b>=1024)); then awk -v b="$b" -v d="$d" 'BEGIN{printf "%.*fK",d,b/1024}'; else printf '%dB' "$b"; fi; }
+# Gradient colour of a bar cell at position pos (0..100): green, through amber, to red. Sets r g b; no subshell.
+heat_rgb() { local pos=$1 p2; if ((pos<=50)); then r=$((40+180*pos/50)) g=$((170-10*pos/50)) b=$((60-60*pos/50)); else p2=$((pos-50)); r=$((220-40*p2/50)) g=$((160-160*p2/50)) b=0; fi; }
 # Threshold colours while a bar is shown; when bars are dropped the number carries the heat its bar tip would have had.
-pct_text() { local p=$1 r g b; if ((bars_off)); then read -r r g b <<<"$(heat_rgb "$p")"; elif ((p<=usage_warn)); then r=$ok_r g=$ok_g b=$ok_b; elif ((p<=usage_critical)); then r=$warn_r g=$warn_g b=$warn_b; else r=$crit_r g=$crit_g b=$crit_b; fi; if [[ -n ${NO_COLOR:-} ]]; then printf '%d%%' "$p"; else printf '\033[38;2;%d;%d;%dm%d%%%s' "$r" "$g" "$b" "$p" "$reset"; fi; }
+pct_text() { local p=$1 r g b; if ((bars_off)); then heat_rgb "$p"; elif ((p<=usage_warn)); then r=$ok_r g=$ok_g b=$ok_b; elif ((p<=usage_critical)); then r=$warn_r g=$warn_g b=$warn_b; else r=$crit_r g=$crit_g b=$crit_b; fi; if [[ -n ${NO_COLOR:-} ]]; then PCT="$p%"; else printf -v PCT '\033[38;2;%d;%d;%dm%d%%%s' "$r" "$g" "$b" "$p" "$reset"; fi; }
 # Fit state: bars_off=1 drops every bar; scale_num/scale_den shrink configured widths uniformly.
 bars_off=0 scale_num=1 scale_den=1
-bar_w() { local w; w=$(get_width "$1" "$2"); printf '%s' $((w*scale_num/scale_den)); }
-# bar plus trailing space, or nothing when bars are dropped — keeps single spacing either way.
-barsp() { ((bars_off)) && return; bar "$@"; printf ' '; }
-bar() {
-  local pct=$1 width=${2:-20} inverted=${3:-0} full i pos r g b p2
+bar() { # sets BAR; empty when bars are off. No subshells: this runs inside the fit loop.
+  local pct=$1 width=$2 full i pos r g b cell
+  BAR=; ((bars_off))&&return
+  width=$((width*scale_num/scale_den)); ((width<1))&&width=1
   ((pct<0))&&pct=0; ((pct>100))&&pct=100
   # Whole cells only: an eighth-block glyph leaves a blank gap before the ░ track.
   full=$(((pct*width+50)/100)); ((pct>0&&full==0))&&full=1
-  printf '['
+  BAR='['
   for ((i=0;i<full;i++)); do
-    ((inverted))&&pos=$((100-i*100/width))||pos=$((i*100/width)); read -r r g b <<<"$(heat_rgb "$pos")"
-    [[ -n ${NO_COLOR:-} ]]&&printf '█'||printf '\033[38;2;%d;%d;%dm█' "$r" "$g" "$b"
+    pos=$((i*100/width)); heat_rgb "$pos"
+    if [[ -n ${NO_COLOR:-} ]]; then BAR+='█'; else printf -v cell '\033[38;2;%d;%d;%dm█' "$r" "$g" "$b"; BAR+=$cell; fi
   done
-  ((full<width))&&printf '%s' "$empty_color"; for ((i=full;i<width;i++)); do printf '░'; done; printf '%s]' "$reset"
+  ((full<width))&&BAR+=$empty_color; for ((i=full;i<width;i++)); do BAR+='░'; done; BAR+="$reset]"
 }
+# Display cells of a string: strip SGR sequences, count characters (every glyph used is single-width). Pure bash.
+cells() { local s=$1 pre rest; while [[ $s == *$'\033['* ]]; do pre=${s%%$'\033['*}; rest=${s#*$'\033['}; s=$pre${rest#*m}; done; N=${#s}; }
 
-model=$(jq -r '.model.display_name//"Claude"' <<<"$input"); used=$(jq -r '.context_window.used_percentage//"null"' <<<"$input"); total_in=$(jq -r '.context_window.total_input_tokens//0' <<<"$input"); ctx=$(jq -r '.context_window.context_window_size//0' <<<"$input"); five=$(jq -r '.rate_limits.five_hour.used_percentage//"null"' <<<"$input"); seven=$(jq -r '.rate_limits.seven_day.used_percentage//"null"' <<<"$input"); session=$(jq -r '.session_id//empty' <<<"$input")
+model=$(jq -r '.model.display_name//"Claude"' <<<"$input"); used=$(jq -r '.context_window.used_percentage//"null"' <<<"$input"); total_in=$(jq -r '.context_window.total_input_tokens//0' <<<"$input"); ctx=$(jq -r '.context_window.context_window_size//0' <<<"$input"); five=$(jq -r '.rate_limits.five_hour.used_percentage//"null"' <<<"$input"); seven=$(jq -r '.rate_limits.seven_day.used_percentage//"null"' <<<"$input")
 fable=null
 if [[ -r $cache_file ]]; then at=$(jq -r '.fetched_at//0' "$cache_file" 2>/dev/null||printf 0); [[ $at =~ ^[0-9]+$ ]]&&(( $(date +%s)-at<=max_stale ))&&fable=$(jq -r '.used_percentage//"null"' "$cache_file" 2>/dev/null||printf null); fi
 
-render_model(){ printf '%s%s%s' "$model_color" "$model" "$reset"; }
-render_profile(){ local p=${CLAUDE_PROFILE:-} b; if [[ -z $p && -n ${CLAUDE_CONFIG_DIR:-} ]]; then b=${CLAUDE_CONFIG_DIR##*/}; [[ $b == .claude-* ]]&&p=${b#.claude-}; fi; [[ -n $p ]]&&printf '%sprof%s %s%s%s' "$label_color" "$reset" "$value_color" "$p" "$reset"; }
-render_cwd(){ local p=${PWD/#$HOME/\~}; ((${#p}>30))&&p="…/$(basename "$(dirname "$PWD")")/$(basename "$PWD")"; printf '%s%s%s' "$value_color" "$p" "$reset"; }
-render_context(){ local v w; w=$(bar_w context 12); printf '%s%s%s ' "$label_color" "$(get_label context ctx)" "$reset"; if [[ $used != null && $ctx -gt 0 ]]; then v=$(printf '%.0f' "$used"); printf '%s%s%s%s/%s%s%s (%s)' "$(barsp "$v" "$w")" "$value_color" "$(fmt_bytes "$total_in")" "$reset" "$value_color" "$(fmt_bytes "$ctx")" "$reset" "$(pct_text "$v")"; else ((bars_off))||bar 0 "$w"; fi; }
-render_disk(){ local x t a p w; x=$(df -k / 2>/dev/null|tail -1); [[ -n $x ]]||return; t=$(awk '{print $2}'<<<"$x"); a=$(awk '{print $4}'<<<"$x"); ((t>0))||return; p=$(((t-a)*100/t)); w=$(bar_w disk 12); printf '%s%s%s %s%s%s%s free' "$label_color" "$(get_label disk disk)" "$reset" "$(barsp "$p" "$w")" "$value_color" "$(fmt_bytes $((a*1024)))" "$reset"; }
-render_tmp(){ local x d t a p w; x=$(df -k /tmp 2>/dev/null|tail -1); d=$(awk '{print $1}'<<<"$x"); [[ $d == tmpfs ]]||return; t=$(awk '{print $2}'<<<"$x"); a=$(awk '{print $4}'<<<"$x"); ((t>0))||return; p=$(((t-a)*100/t)); w=$(bar_w tmp 15); printf '%s%s%s %s%s%s%s free' "$label_color" "$(get_label tmp /tmp)" "$reset" "$(barsp "$p" "$w")" "$value_color" "$(fmt_bytes $((a*1024)))" "$reset"; }
-render_usage(){ local k=$1 d=$2 p=$3 v w; [[ $p != null && -n $p ]]||return; v=$(printf '%.0f' "$p"); w=$(bar_w "$k" 12); printf '%s%s%s %s(%s)' "$label_color" "$(get_label "$k" "$d")" "$reset" "$(barsp "$v" "$w")" "$(pct_text "$v")"; }
-render_fable(){ local p=$1 v w; w=$(bar_w fable 12); if [[ $p == null || -z $p ]]; then printf '%s%s%s %s(n/a)' "$label_color" "$(get_label fable Fable)" "$reset" "$(barsp 0 "$w")"; else v=$(printf '%.0f' "$p"); printf '%s%s%s %s(%s)' "$label_color" "$(get_label fable Fable)" "$reset" "$(barsp "$v" "$w")" "$(pct_text "$v")"; fi; }
-
+# ---- values and labels, computed once (the fit loop below must not fork) ----
 segments=$default_segments; [[ -n $cfg ]]&&segments=$(jq -c '.segments//$d' --argjson d "$default_segments" "$cfg")
-render_line() {
-  local first=1 segment rendered
-  while IFS= read -r segment; do
-    rendered=; case $segment in model)rendered=$(render_model);;profile)rendered=$(render_profile);;cwd)rendered=$(render_cwd);;context)rendered=$(render_context);;disk)rendered=$(render_disk);;tmp)rendered=$(render_tmp);;five_hour)rendered=$(render_usage five_hour 5h "$five");;seven_day)rendered=$(render_usage seven_day 7d "$seven");;fable)rendered=$(render_fable "$fable");;esac
-    [[ -n $rendered ]]||continue; ((first))||sep; printf '%s' "$rendered"; first=0
-  done < <(jq -r '.[]'<<<"$segments")
+seg_list=(); while IFS= read -r s; do seg_list+=("$s"); done < <(jq -r '.[]'<<<"$segments")
+L_ctx=$(get_label context ctx) L_disk=$(get_label disk disk) L_tmp=$(get_label tmp /tmp) L_five=$(get_label five_hour 5h) L_seven=$(get_label seven_day 7d) L_fable=$(get_label fable Fable)
+W_ctx=$(get_width context 12) W_disk=$(get_width disk 12) W_tmp=$(get_width tmp 15) W_five=$(get_width five_hour 12) W_seven=$(get_width seven_day 12) W_fable=$(get_width fable 12)
+profile=${CLAUDE_PROFILE:-}; if [[ -z $profile && -n ${CLAUDE_CONFIG_DIR:-} ]]; then _b=${CLAUDE_CONFIG_DIR##*/}; [[ $_b == .claude-* ]]&&profile=${_b#.claude-}; fi
+cwd=${PWD/#$HOME/\~}; ((${#cwd}>30))&&cwd="…/$(basename "$(dirname "$PWD")")/$(basename "$PWD")"
+ctx_pct=; ctx_used1= ctx_used0= ctx_total1= ctx_total0=
+if [[ $used != null && $ctx -gt 0 ]]; then ctx_pct=$(printf '%.0f' "$used"); ctx_used1=$(fmt_bytes "$total_in" 1); ctx_used0=$(fmt_bytes "$total_in" 0); ctx_total1=$(fmt_bytes "$ctx" 1); ctx_total0=$(fmt_bytes "$ctx" 0); fi
+disk_pct= disk_free1= disk_free0=
+_x=$(df -k / 2>/dev/null|tail -1); if [[ -n $_x ]]; then _t=$(awk '{print $2}'<<<"$_x"); _a=$(awk '{print $4}'<<<"$_x"); if ((_t>0)); then disk_pct=$(((_t-_a)*100/_t)); disk_free1=$(fmt_bytes $((_a*1024)) 1); disk_free0=$(fmt_bytes $((_a*1024)) 0); fi; fi
+tmp_pct= tmp_free1= tmp_free0=
+_x=$(df -k /tmp 2>/dev/null|tail -1); if [[ $(awk '{print $1}'<<<"$_x") == tmpfs ]]; then _t=$(awk '{print $2}'<<<"$_x"); _a=$(awk '{print $4}'<<<"$_x"); if ((_t>0)); then tmp_pct=$(((_t-_a)*100/_t)); tmp_free1=$(fmt_bytes $((_a*1024)) 1); tmp_free0=$(fmt_bytes $((_a*1024)) 0); fi; fi
+five_pct=; [[ $five != null && -n $five ]]&&five_pct=$(printf '%.0f' "$five")
+seven_pct=; [[ $seven != null && -n $seven ]]&&seven_pct=$(printf '%.0f' "$seven")
+fable_pct=; [[ $fable != null && -n $fable ]]&&fable_pct=$(printf '%.0f' "$fable")
+
+# ---- exclusion ladder: ordered flags the builders consult; each step buys cells when nothing else fits ----
+default_ladder='disk_label ctx_int no_parens disk_int ctx_no_total no_free fable_short disk_value ctx_no_used fable_label fable_segment seven_label five_label ctx_label seven_segment five_segment'
+ladder=$default_ladder; [[ -n $cfg ]]&&ladder=$(jq -r --arg d "$default_ladder" '(.fit.ladder // ($d|split(" ")))|join(" ")' "$cfg")
+fit_rows=$(get_cfg '.fit.rows' '2')
+declare -A F=()
+paren() { if [[ -n ${F[no_parens]:-} ]]; then P=$1; else P="($1)"; fi; }
+lab() { printf '%s%s%s' "$label_color" "$1" "$reset"; }   # only used outside the fit loop
+pct_paren() { pct_text "$1"; paren "$PCT"; }               # sets P
+
+# Builders fill seg_top[] (label + bar) and seg_bot[] (values). A segment with both empty is omitted.
+build() {
+  local s top bot used total pct free1 free0 L W
+  seg_top=() seg_bot=()
+  for s in "${seg_list[@]}"; do
+    top= bot=
+    case $s in
+      model) top="$model_color$model$reset" ;;
+      profile) [[ -n $profile ]]&&top="${label_color}prof$reset $value_color$profile$reset" ;;
+      cwd) top="$value_color$cwd$reset" ;;
+      context)
+        [[ -n ${F[ctx_label]:-} ]]||top="$label_color$L_ctx$reset"
+        if [[ -n $ctx_pct ]]; then
+          bar "$ctx_pct" "$W_ctx"; top+=${BAR:+${top:+ }$BAR}
+          if [[ -n ${F[ctx_int]:-} ]]; then used=$ctx_used0 total=$ctx_total0; else used=$ctx_used1 total=$ctx_total1; fi
+          [[ -n ${F[ctx_no_used]:-} ]]||bot="$value_color$used$reset"
+          [[ -n ${F[ctx_no_total]:-} ]]||bot+="$value_color${bot:+/}$total$reset"
+          pct_paren "$ctx_pct"; bot+=${bot:+ }$P
+        else bar 0 "$W_ctx"; top+=${BAR:+${top:+ }$BAR}; fi ;;
+      disk|tmp)
+        if [[ $s == disk ]]; then pct=$disk_pct free1=$disk_free1 free0=$disk_free0 L=$L_disk W=$W_disk; else pct=$tmp_pct free1=$tmp_free1 free0=$tmp_free0 L=$L_tmp W=$W_tmp; fi
+        [[ -n $pct ]]||continue
+        [[ -n ${F[disk_label]:-} ]]||top="$label_color$L$reset"
+        bar "$pct" "$W"; top+=${BAR:+${top:+ }$BAR}
+        if [[ -z ${F[disk_value]:-} ]]; then if [[ -n ${F[disk_int]:-} ]]; then bot="$value_color$free0$reset"; else bot="$value_color$free1$reset"; fi; [[ -n ${F[no_free]:-} ]]||bot+=" free"; fi ;;
+      five_hour)
+        [[ -n $five_pct && -z ${F[five_segment]:-} ]]||continue
+        [[ -n ${F[five_label]:-} ]]||top="$label_color$L_five$reset"; bar "$five_pct" "$W_five"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$five_pct"; bot=$P ;;
+      seven_day)
+        [[ -n $seven_pct && -z ${F[seven_segment]:-} ]]||continue
+        [[ -n ${F[seven_label]:-} ]]||top="$label_color$L_seven$reset"; bar "$seven_pct" "$W_seven"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$seven_pct"; bot=$P ;;
+      fable)
+        [[ -z ${F[fable_segment]:-} ]]||continue
+        if [[ -n ${F[fable_label]:-} ]]; then :; elif [[ -n ${F[fable_short]:-} ]]; then top="$label_color${L_fable:0:1}$reset"; else top="$label_color$L_fable$reset"; fi
+        if [[ -n $fable_pct ]]; then bar "$fable_pct" "$W_fable"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$fable_pct"; bot=$P; else bar 0 "$W_fable"; top+=${BAR:+${top:+ }$BAR}; paren n/a; bot=$P; fi ;;
+    esac
+    [[ -n $top$bot ]]||continue
+    seg_top+=("$top"); seg_bot+=("$bot")
+  done
 }
-# Display cells of a rendered line: strip SGR, count code points (all glyphs used are single-width).
-cells() { local s; s=$(sed $'s/\x1b\\[[0-9;]*m//g' <<<"$1"); jq -Rr length <<<"$s"; }
-# Configured widths, one per line, for the segments that actually rendered a bar.
-bar_widths() {
-  local segment
-  while IFS= read -r segment; do
-    case $segment in context|fable)get_width "$segment" 12;;five_hour)[[ $five != null ]]&&get_width five_hour 12;;seven_day)[[ $seven != null ]]&&get_width seven_day 12;;disk)[[ -n $(render_disk) ]]&&get_width disk 12;;tmp)[[ -n $(render_tmp) ]]&&get_width tmp 15;;esac
-  done < <(jq -r '.[]'<<<"$segments")
+# flat: one row, "top bot" per segment. stacked: two rows, each segment padded to max(top,bot) so columns align.
+assemble_flat() { local i part out=; for i in "${!seg_top[@]}"; do part=${seg_top[i]}; [[ -n $part && -n ${seg_bot[i]} ]]&&part+=' '; part+=${seg_bot[i]}; out+=${out:+$sep}$part; done; row1=$out row2=; }
+assemble_stacked() {
+  local i t b wt wb w pad r1= r2=
+  for i in "${!seg_top[@]}"; do
+    t=${seg_top[i]} b=${seg_bot[i]}; cells "$t"; wt=$N; cells "$b"; wb=$N; w=$((wt>wb?wt:wb))
+    printf -v pad '%*s' $((w-wt)) ''; r1+=${r1:+$sep}$t$pad
+    printf -v pad '%*s' $((w-wb)) ''; r2+=${r2:+$sep}$b$pad
+  done
+  row1=$r1 row2=$r2
 }
 
-line=$(render_line)
-# Fit to the terminal: Claude Code exports COLUMNS (v2.1.153+) and draws the row ~3 cells narrower than that.
-if [[ ${COLUMNS:-} =~ ^[0-9]+$ ]] && ((COLUMNS>0)); then
-  budget=$((COLUMNS-3-fit_reserve)); ((budget<1))&&budget=1
-  n=$(cells "$line")
-  if ((n>budget)); then
-    widths=$(bar_widths); total=0; for w in $widths; do total=$((total+w)); done; target=$((total-(n-budget)))
-    # Shrink every bar by one ratio; if any bar would land below the floor, drop all bars instead.
-    if ((total>0&&target>0)); then
-      scale_num=$target scale_den=$total
-      for w in $widths; do ((w*scale_num/scale_den<min_bar_cells))&&bars_off=1; done
-    else bars_off=1; fi
-    line=$(render_line); n=$(cells "$line")
-    # Floor division leaves slack; pad to the budget so the right edge lands on the same column.
-    ((n<budget))&&line+=$(printf '%*s' $((budget-n)) '')
-  fi
+# ---- fit pipeline: try flat then stacked at each stage; stop at the first that fits ----
+emit() { printf '%s\n' "$row1"; [[ -n $row2 ]]&&printf '%s\n' "$row2"; exit 0; }
+fits() { cells "$row1"; ((N<=budget)); }
+try_layouts() { build; assemble_flat; fits&&return 0; if ((fit_rows>=2)); then assemble_stacked; fits&&return 0; fi; return 1; }
+pad_rows() { cells "$row1"; ((N<budget))&&printf -v _p '%*s' $((budget-N)) ''&&row1+=$_p; if [[ -n $row2 ]]; then cells "$row2"; ((N<budget))&&printf -v _p '%*s' $((budget-N)) ''&&row2+=$_p; fi; }
+
+if ! [[ ${COLUMNS:-} =~ ^[0-9]+$ ]] || ((COLUMNS<=0)); then build; assemble_flat; emit; fi
+budget=$((COLUMNS-3-fit_reserve)); ((budget<1))&&budget=1
+# Stage 1: full bars.
+try_layouts&&emit
+# Stage 2: shrink bars uniformly. Walk the shared ratio down one cell at a time (stacked cells are bounded by their
+# value row, so a bar cell does not always buy a column) and stop at the first ratio that fits or breaks the floor.
+widths=; for s in "${seg_list[@]}"; do case $s in context)widths+=" $W_ctx";; disk)[[ -n $disk_pct ]]&&widths+=" $W_disk";; tmp)[[ -n $tmp_pct ]]&&widths+=" $W_tmp";; five_hour)[[ -n $five_pct ]]&&widths+=" $W_five";; seven_day)[[ -n $seven_pct ]]&&widths+=" $W_seven";; fable)widths+=" $W_fable";; esac; done
+total=0; for w in $widths; do total=$((total+w)); done
+above_floor() { local w; for w in $widths; do ((w*scale_num/scale_den<min_bar_cells))&&return 1; done; return 0; }
+shrink_layout() { # $1 = flat|stacked. Sets scale and rows on success.
+  local target=$((total-1)); scale_den=$total
+  while ((target>0)); do
+    scale_num=$target; above_floor||break
+    build; "assemble_$1"; fits&&return 0
+    target=$((target-1))
+  done
+  scale_num=1 scale_den=1; return 1
+}
+if ((total>0)); then
+  shrink_layout flat&&{ pad_rows; emit; }
+  ((fit_rows>=2))&&shrink_layout stacked&&{ pad_rows; emit; }
 fi
-printf '%s\n' "$line"
+# Stage 3: bars gone; percentages carry the heat colour instead.
+scale_num=1 scale_den=1 bars_off=1
+try_layouts&&{ pad_rows; emit; }
+# Stage 4: exclusion ladder, one step at a time, re-measured after each.
+for step in $ladder; do F[$step]=1; try_layouts&&{ pad_rows; emit; }; done
+# Floor: nothing left to give; Claude Code truncates the overflow.
+build; assemble_flat; emit

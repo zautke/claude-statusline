@@ -55,25 +55,65 @@ fallback=$(printf '%s' "$payload" | NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFR
 }
 [[ "$fallback" != *"drift"* ]] || { printf 'drift segment still rendered\n' >&2; exit 1; }
 
-# Terminal fit: COLUMNS budget is COLUMNS-3. Wide terminal leaves bars untouched and unpadded.
+# Terminal fit: budget is COLUMNS-3. Helpers count display cells per row.
 cells() { sed $'s/\x1b\\[[0-9;]*m//g' <<<"$1" | jq -Rr length; }
-wide=$(printf '%s' "$payload" | COLUMNS=400 NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 bash "$ROOT/scripts/statusline-command.sh")
+render() { printf '%s' "$payload" | COLUMNS=$1 NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 bash "$ROOT/scripts/statusline-command.sh"; }
+rows() { printf '%s\n' "$1" | wc -l | tr -d ' '; }
+row() { sed -n "${2}p" <<<"$1"; }
+assert_fit() { # $1=label $2=output $3=budget: every row <= budget, stacked rows equal length
+  local r n; while IFS= read -r r; do n=$(cells "$r"); ((n<=$3)) || { printf '%s: row overflows budget %s: %s\n' "$1" "$3" "$n" >&2; exit 1; }; done <<<"$2"
+  if (($(rows "$2")==2)); then [[ $(cells "$(row "$2" 1)") -eq $(cells "$(row "$2" 2)") ]] || { printf '%s: stacked rows differ in width\n' "$1" >&2; exit 1; }; fi
+}
+# Wide terminal: flat, untouched, unpadded.
+wide=$(render 400)
 [[ "$wide" == "$fallback" ]] || { printf 'wide terminal changed the render\n' >&2; exit 1; }
-# Mid width: bars shrink uniformly to >= 5 cells, line padded to exactly the budget.
 full_cells=$(cells "$fallback")
-mid=$((full_cells-20+3))
-fit=$(printf '%s' "$payload" | COLUMNS=$mid NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 bash "$ROOT/scripts/statusline-command.sh")
-[[ $(cells "$fit") -eq $((mid-3)) ]] || { printf 'fit width mismatch: %s vs %s\n' "$(cells "$fit")" "$((mid-3))" >&2; exit 1; }
-ctxbar=${fit#*ctx [}; ctxbar=${ctxbar%%]*}
+# Stacked: a width that fits two rows at full bars but not one row. Separators must align on both rows, bars untouched.
+stk=$(render $((full_cells-10+3)))
+[[ $(rows "$stk") -eq 2 ]] || { printf 'expected stacked layout, got %s rows\n' "$(rows "$stk")" >&2; exit 1; }
+assert_fit stacked "$stk" $((full_cells-10))
+r1=$(row "$stk" 1); r2=$(row "$stk" 2)
+[[ "$r1" == *"ctx [░░░░░░░░░░░░]"* || "$r1" == *"ctx [███░░░░░░░░░]"* ]] || { printf 'stacked top row lost full ctx bar: %s\n' "$r1" >&2; exit 1; }
+pos1=${r1%%●*}; pos2=${r2%%●*}
+[[ ${#pos1} -eq ${#pos2} ]] || { printf 'separator misaligned between rows\n' >&2; exit 1; }
+[[ "$r2" == *"1000B/195.3K (25%)"* ]] || { printf 'stacked bottom row lost ctx values: %s\n' "$r2" >&2; exit 1; }
+stk_cells=$(cells "$r1")
+# Shrink: just under the stacked width, bars shrink but stay >= 5 and rows are padded to the budget.
+shr=$(render $((stk_cells-6+3)))
+assert_fit shrink "$shr" $((stk_cells-6))
+[[ $(cells "$(row "$shr" 1)") -eq $((stk_cells-6)) ]] || { printf 'shrunk rows not padded to budget\n' >&2; exit 1; }
+ctxbar=${shr#*ctx [}; ctxbar=${ctxbar%%]*}
 [[ ${#ctxbar} -lt 12 && ${#ctxbar} -ge 5 ]] || { printf 'ctx bar not shrunk into range: %s\n' "${#ctxbar}" >&2; exit 1; }
-# Narrow: any bar below floor drops every bar; no padding beyond budget is added.
-narrow=$(printf '%s' "$payload" | COLUMNS=60 NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 bash "$ROOT/scripts/statusline-command.sh")
-[[ "$narrow" != *"["* ]] || { printf 'bars not dropped at narrow width\n' >&2; exit 1; }
-[[ "$narrow" == *"ctx 1000B/195.3K"* ]] || { printf 'bar removal left bad spacing: %s\n' "$narrow" >&2; exit 1; }
+# Ladder: at 90 columns bars are gone and the disk label is the first casualty; parentheses survive until later.
+lad=$(render 90)
+assert_fit ladder90 "$lad" 87
+[[ "$lad" != *"["* ]] || { printf 'bars not dropped at 90\n' >&2; exit 1; }
+# Ladder deeper: at 60 columns percentages lose parentheses, Fable is gone, 5h and 7d remain.
+lad60=$(render 60)
+assert_fit ladder60 "$lad60" 57
+[[ "$lad60" != *"("* ]] || { printf 'parentheses survived at 60\n' >&2; exit 1; }
+[[ "$lad60" == *"5h"* && "$lad60" == *"7d"* ]] || { printf '5h/7d dropped too early at 60: %s\n' "$lad60" >&2; exit 1; }
+[[ "$lad60" != *"Fable"* && "$lad60" != *"F "* ]] || { printf 'Fable survived at 60: %s\n' "$lad60" >&2; exit 1; }
+# Floor: 30 columns must not crash and must emit at most 2 rows.
+flr=$(render 30); [[ $(rows "$flr") -le 2 ]] || { printf 'floor emitted too many rows\n' >&2; exit 1; }
+# fit.rows=1 never stacks.
+printf '{"fit":{"rows":1}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
+one=$(render $((full_cells-10+3)))
+[[ $(rows "$one") -eq 1 ]] || { printf 'fit.rows=1 still stacked\n' >&2; exit 1; }
+assert_fit rows1 "$one" $((full_cells-10))
 # Reserve shrinks the budget.
-printf '{"fit":{"reserve":20}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
-res=$(printf '%s' "$payload" | COLUMNS=$((mid+20)) NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 bash "$ROOT/scripts/statusline-command.sh")
-[[ $(cells "$res") -eq $((mid-3)) ]] || { printf 'reserve not applied\n' >&2; exit 1; }
+printf '{"fit":{"reserve":20,"rows":1}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
+res=$(render $((full_cells-10+3+20)))
+assert_fit reserve "$res" $((full_cells-10))
+[[ "$res" != "$fallback" ]] || { printf 'reserve not applied\n' >&2; exit 1; }
+# Custom ladder: only ctx_label, so at 90 the ctx label goes and nothing else is touched.
+printf '{"fit":{"rows":1,"ladder":["ctx_label"]}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
+cl=$(render 90)
+[[ "$cl" != *"ctx"* && "$cl" == *"(25%)"* && "$cl" == *"Fable"* ]] || { printf 'custom ladder not honoured: %s\n' "$cl" >&2; exit 1; }
+# Invalid ladder entry rejects the config; defaults resume (stacked at the stacked width).
+printf '{"fit":{"ladder":["bogus"]}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
+bad=$(render $((full_cells-10+3)))
+[[ $(rows "$bad") -eq 2 ]] || { printf 'invalid ladder did not fall back to defaults\n' >&2; exit 1; }
 printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
 
 bash "$ROOT/scripts/statusline-command.sh" --help | grep -q '^Usage:'

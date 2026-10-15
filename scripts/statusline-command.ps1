@@ -231,14 +231,11 @@ function Get-Sep { return "${C_SEP} ● ${R}" }
 $script:barsOff = $false
 $script:scaleNum = 1
 $script:scaleDen = 1
-$script:barWidths = [System.Collections.Generic.List[int]]::new()
-# Bar plus trailing space, or nothing when bars are dropped — keeps single spacing either way.
-function Get-SegBar([int]$pct, [int]$width) {
+function Get-FitBar([int]$pct, [int]$width) {
     if ($script:barsOff) { return '' }
-    $script:barWidths.Add($width)
-    return "$(Get-Bar $pct ([int][math]::Floor($width * $script:scaleNum / $script:scaleDen))) "
+    return Get-Bar $pct ([math]::Max(1, [int][math]::Floor($width * $script:scaleNum / $script:scaleDen)))
 }
-# Display cells of a rendered line: strip SGR, count chars (all glyphs used are single-width BMP).
+# Display cells of a rendered row: strip SGR, count chars (all glyphs used are single-width BMP).
 function Get-Cells([string]$s) { return ($s -replace "$ESC\[[0-9;]*m", '').Length }
 
 # Parse JSON — no jq needed
@@ -250,100 +247,158 @@ $ctxSize = $j.context_window.context_window_size
 $rl5h    = $j.rate_limits.five_hour.used_percentage
 $rl7d    = $j.rate_limits.seven_day.used_percentage
 
-function Build-Line {
-$script:barWidths.Clear()
-$out = "${C_MODEL}${model}${R}"
-
-# Current directory
-$_cwd = $PWD.Path -replace [regex]::Escape($HOME), '~'
-$_cwd = $_cwd -replace '\\', '/'
-if ($_cwd.Length -gt 30) {
+# ---- values computed once; the fit loop below only assembles strings ----
+$cwdText = $PWD.Path -replace [regex]::Escape($HOME), '~'
+$cwdText = $cwdText -replace '\\', '/'
+if ($cwdText.Length -gt 30) {
     $parts = $PWD.Path -split '[/\\]' | Where-Object { $_ -ne '' }
-    $_cwd = if ($parts.Count -ge 2) { "…/$($parts[-2])/$($parts[-1])" } else { "/$($parts[-1])" }
+    $cwdText = if ($parts.Count -ge 2) { "…/$($parts[-2])/$($parts[-1])" } else { "/$($parts[-1])" }
 }
-$out += "$(Get-Sep)${C_VAL}${_cwd}${R}"
-
-# Context window
-$out += Get-Sep
-$out += "${C_LABEL}ctx${R} "
+function Format-BytesD([long]$b, [int]$d) {
+    if ($b -ge 1073741824) { return ("{0:F$d}G" -f ($b / 1073741824)) }
+    if ($b -ge 1048576)    { return ("{0:F$d}M" -f ($b / 1048576)) }
+    if ($b -ge 1024)       { return ("{0:F$d}K" -f ($b / 1024)) }
+    return "${b}B"
+}
+$ctxPct = $null
 if ($null -ne $usedPct -and $ctxSize -gt 0) {
-    $ui   = [int][math]::Round($usedPct)
-    $out += "$(Get-SegBar $ui 12)${C_VAL}$(Format-Bytes $totalIn)${R}/${C_VAL}$(Format-Bytes $ctxSize)${R} ($(Format-PctText $ui))"
-} else {
-    $out += (Get-SegBar 0 12).TrimEnd()
+    $ctxPct = [int][math]::Round($usedPct)
+    $ctxUsed1 = Format-BytesD $totalIn 1; $ctxUsed0 = Format-BytesD $totalIn 0
+    $ctxTotal1 = Format-BytesD $ctxSize 1; $ctxTotal0 = Format-BytesD $ctxSize 0
 }
-
-# Disk space — platform-aware
+$diskPct = $null; $tmpPct = $null
 if ($IsWindows) {
     $drive = Get-PSDrive C -ErrorAction SilentlyContinue
     if ($drive -and ($drive.Used + $drive.Free) -gt 0) {
-        $total = $drive.Used + $drive.Free
-        $dp    = [int]($drive.Used * 100 / $total)
-        $out  += "$(Get-Sep)${C_LABEL}disk${R} $(Get-SegBar $dp 12)${C_VAL}$(Format-Bytes ([long]$drive.Free))${R} free"
+        $diskPct = [int]($drive.Used * 100 / ($drive.Used + $drive.Free))
+        $diskFree1 = Format-BytesD ([long]$drive.Free) 1; $diskFree0 = Format-BytesD ([long]$drive.Free) 0
     }
 } else {
-    # macOS / Linux
     $dfOut = (df -k / 2>$null | Select-Object -Last 1)
     if ($dfOut) {
-        $parts = ($dfOut -split '\s+')
-        $dt = [long]$parts[1]; $da = [long]$parts[3]
-        if ($dt -gt 0) {
-            $dp   = [int](($dt - $da) * 100 / $dt)
-            $out += "$(Get-Sep)${C_LABEL}disk${R} $(Get-SegBar $dp 12)${C_VAL}$(Format-Bytes ($da * 1024))${R} free"
-        }
+        $parts = ($dfOut -split '\s+'); $dt = [long]$parts[1]; $da = [long]$parts[3]
+        if ($dt -gt 0) { $diskPct = [int](($dt - $da) * 100 / $dt); $diskFree1 = Format-BytesD ($da * 1024) 1; $diskFree0 = Format-BytesD ($da * 1024) 0 }
     }
     $tfOut = (df -k /tmp 2>$null | Select-Object -Last 1)
-    $tmpDev = if ($tfOut) { ($tfOut -split '\s+')[0] } else { '' }
-    if ($tfOut -and $tmpDev -eq 'tmpfs') {
-        $parts = ($tfOut -split '\s+')
-        $tt = [long]$parts[1]; $ta = [long]$parts[3]
-        if ($tt -gt 0) {
-            $tp   = [int](($tt - $ta) * 100 / $tt)
-            $out += "$(Get-Sep)${C_LABEL}/tmp${R} $(Get-SegBar $tp 15)${C_VAL}$(Format-Bytes ($ta * 1024))${R} free"
-        }
+    if ($tfOut -and (($tfOut -split '\s+')[0] -eq 'tmpfs')) {
+        $parts = ($tfOut -split '\s+'); $tt = [long]$parts[1]; $ta = [long]$parts[3]
+        if ($tt -gt 0) { $tmpPct = [int](($tt - $ta) * 100 / $tt); $tmpFree1 = Format-BytesD ($ta * 1024) 1; $tmpFree0 = Format-BytesD ($ta * 1024) 0 }
     }
 }
+$fivePct = if ($null -ne $rl5h) { [int][math]::Round($rl5h) } else { $null }
+$sevenPct = if ($null -ne $rl7d) { [int][math]::Round($rl7d) } else { $null }
 
-# Rate limits (hidden when absent — Claude.ai subscribers only)
-if ($null -ne $rl5h) {
-    $v    = [int][math]::Round($rl5h)
-    $out += "$(Get-Sep)${C_LABEL}5h${R} $(Get-SegBar $v 12)($(Format-PctText $v))"
+# ---- exclusion ladder: ordered flags the builders consult; each step buys cells when nothing else fits ----
+$defaultLadder = @('disk_label','ctx_int','no_parens','disk_int','ctx_no_total','no_free','fable_short','disk_value','ctx_no_used','fable_label','fable_segment','seven_label','five_label','ctx_label','seven_segment','five_segment')
+$ladder = $defaultLadder; $fitRows = 2
+if ($cfg) {
+    if ($cfg.fit.ladder -is [array] -and @($cfg.fit.ladder | Where-Object { $_ -notin $defaultLadder }).Count -eq 0) { $ladder = @($cfg.fit.ladder) }
+    if ($cfg.fit.rows -in 1, 2) { $fitRows = [int]$cfg.fit.rows }
 }
-if ($null -ne $rl7d) {
-    $v    = [int][math]::Round($rl7d)
-    $out += "$(Get-Sep)${C_LABEL}7d${R} $(Get-SegBar $v 12)($(Format-PctText $v))"
+$script:F = @{}
+function Get-Paren([string]$s) { if ($script:F['no_parens']) { return $s } else { return "($s)" } }
+function Add-Bar([string]$top, [string]$bar) { if ($bar) { return ($top ? "$top $bar" : $bar) } else { return $top } }
+
+# Builders fill $segTop (label + bar) and $segBot (values). A segment with both empty is omitted.
+function Build {
+    $script:segTop = [System.Collections.Generic.List[string]]::new()
+    $script:segBot = [System.Collections.Generic.List[string]]::new()
+    $segments = @('model', 'cwd', 'context', 'disk', 'tmp', 'five_hour', 'seven_day', 'fable')
+    foreach ($s in $segments) {
+        $top = ''; $bot = ''
+        switch ($s) {
+            'model' { $top = "${C_MODEL}${model}${R}" }
+            'cwd'   { $top = "${C_VAL}${cwdText}${R}" }
+            'context' {
+                if (-not $F['ctx_label']) { $top = "${C_LABEL}ctx${R}" }
+                if ($null -ne $ctxPct) {
+                    $top = Add-Bar $top (Get-FitBar $ctxPct 12)
+                    $used = $F['ctx_int'] ? $ctxUsed0 : $ctxUsed1; $total = $F['ctx_int'] ? $ctxTotal0 : $ctxTotal1
+                    if (-not $F['ctx_no_used']) { $bot = "${C_VAL}${used}${R}" }
+                    if (-not $F['ctx_no_total']) { $bot += "${C_VAL}$($bot ? '/' : '')${total}${R}" }
+                    $bot += ($bot ? ' ' : '') + (Get-Paren (Format-PctText $ctxPct))
+                } else { $top = Add-Bar $top (Get-FitBar 0 12) }
+            }
+            { $_ -in 'disk', 'tmp' } {
+                if ($s -eq 'disk') { $pct = $diskPct; $free1 = $diskFree1; $free0 = $diskFree0; $L = 'disk'; $W = 12 } else { $pct = $tmpPct; $free1 = $tmpFree1; $free0 = $tmpFree0; $L = '/tmp'; $W = 15 }
+                if ($null -eq $pct) { continue }
+                if (-not $F['disk_label']) { $top = "${C_LABEL}${L}${R}" }
+                $top = Add-Bar $top (Get-FitBar $pct $W)
+                if (-not $F['disk_value']) { $bot = "${C_VAL}$($F['disk_int'] ? $free0 : $free1)${R}"; if (-not $F['no_free']) { $bot += ' free' } }
+            }
+            'five_hour' {
+                if ($null -eq $fivePct -or $F['five_segment']) { continue }
+                if (-not $F['five_label']) { $top = "${C_LABEL}5h${R}" }
+                $top = Add-Bar $top (Get-FitBar $fivePct 12); $bot = Get-Paren (Format-PctText $fivePct)
+            }
+            'seven_day' {
+                if ($null -eq $sevenPct -or $F['seven_segment']) { continue }
+                if (-not $F['seven_label']) { $top = "${C_LABEL}7d${R}" }
+                $top = Add-Bar $top (Get-FitBar $sevenPct 12); $bot = Get-Paren (Format-PctText $sevenPct)
+            }
+            'fable' {
+                if ($F['fable_segment']) { continue }
+                if ($F['fable_label']) { } elseif ($F['fable_short']) { $top = "${C_LABEL}$($fableLabel.Substring(0,1))${R}" } else { $top = "${C_LABEL}${fableLabel}${R}" }
+                if ($null -ne $fablePct) { $top = Add-Bar $top (Get-FitBar $fablePct $fableWidth); $bot = Get-Paren (Format-PctText $fablePct) }
+                else { $top = Add-Bar $top (Get-FitBar 0 $fableWidth); $bot = Get-Paren 'n/a' }
+            }
+        }
+        if (-not ($top + $bot)) { continue }
+        $script:segTop.Add($top); $script:segBot.Add($bot)
+    }
+}
+# flat: one row, "top bot" per segment. stacked: two rows, each segment padded to max(top,bot) so columns align.
+function Assemble-Flat {
+    $parts = for ($i = 0; $i -lt $segTop.Count; $i++) { $t = $segTop[$i]; $b = $segBot[$i]; if ($t -and $b) { "$t $b" } else { "$t$b" } }
+    $script:row1 = $parts -join (Get-Sep); $script:row2 = ''
+}
+function Assemble-Stacked {
+    $r1 = @(); $r2 = @()
+    for ($i = 0; $i -lt $segTop.Count; $i++) {
+        $t = $segTop[$i]; $b = $segBot[$i]; $wt = Get-Cells $t; $wb = Get-Cells $b; $w = [math]::Max($wt, $wb)
+        $r1 += $t + (' ' * ($w - $wt)); $r2 += $b + (' ' * ($w - $wb))
+    }
+    $script:row1 = $r1 -join (Get-Sep); $script:row2 = $r2 -join (Get-Sep)
 }
 
-# Fable usage — show empty bar while cache is unavailable; never invent a percentage.
-$out += Get-Sep
-$out += "${C_LABEL}${fableLabel}${R} "
-if ($null -ne $fablePct) {
-    $out += "$(Get-SegBar $fablePct $fableWidth)($(Format-PctText $fablePct))"
-} else {
-    $out += "$(Get-SegBar 0 $fableWidth)(n/a)"
-}
-return $out
+# ---- fit pipeline: try flat then stacked at each stage; stop at the first that fits ----
+function Emit { [Console]::WriteLine($script:row1); if ($script:row2) { [Console]::WriteLine($script:row2) }; exit 0 }
+function Test-Fits { return ((Get-Cells $script:row1) -le $budget) }
+function Try-Layouts { Build; Assemble-Flat; if (Test-Fits) { return $true }; if ($fitRows -ge 2) { Assemble-Stacked; if (Test-Fits) { return $true } }; return $false }
+function Pad-Rows {
+    $n = Get-Cells $script:row1; if ($n -lt $budget) { $script:row1 += ' ' * ($budget - $n) }
+    if ($script:row2) { $n = Get-Cells $script:row2; if ($n -lt $budget) { $script:row2 += ' ' * ($budget - $n) } }
 }
 
-$line = Build-Line
-# Fit to the terminal: Claude Code exports COLUMNS (v2.1.153+) and draws the row ~3 cells narrower than that.
 $columns = 0
 if ($env:COLUMNS -match '^\d+$') { $columns = [int]$env:COLUMNS }
-if ($columns -gt 0) {
-    $budget = [math]::Max(1, $columns - 3 - $fitReserve)
-    $n = Get-Cells $line
-    if ($n -gt $budget) {
-        $total = 0; foreach ($w in $script:barWidths) { $total += $w }
-        $target = $total - ($n - $budget)
-        # Shrink every bar by one ratio; if any bar would land below the floor, drop all bars instead.
-        if ($total -gt 0 -and $target -gt 0) {
-            $script:scaleNum = $target; $script:scaleDen = $total
-            foreach ($w in $script:barWidths) { if ([math]::Floor($w * $target / $total) -lt $minBarCells) { $script:barsOff = $true } }
-        } else { $script:barsOff = $true }
-        $line = Build-Line
-        $n = Get-Cells $line
-        # Floor division leaves slack; pad to the budget so the right edge lands on the same column.
-        if ($n -lt $budget) { $line += ' ' * ($budget - $n) }
+if ($columns -le 0) { Build; Assemble-Flat; Emit }
+$budget = [math]::Max(1, $columns - 3 - $fitReserve)
+# Stage 1: full bars.
+if (Try-Layouts) { Emit }
+# Stage 2: shrink bars uniformly. Walk the shared ratio down one cell at a time (stacked cells are bounded by their
+# value row, so a bar cell does not always buy a column) and stop at the first ratio that fits or breaks the floor.
+$widths = @(12); if ($null -ne $diskPct) { $widths += 12 }; if ($null -ne $tmpPct) { $widths += 15 }; if ($null -ne $fivePct) { $widths += 12 }; if ($null -ne $sevenPct) { $widths += 12 }; $widths += $fableWidth
+$total = ($widths | Measure-Object -Sum).Sum
+function Shrink-Layout([string]$layout) {
+    $target = $total - 1; $script:scaleDen = $total
+    while ($target -gt 0) {
+        $script:scaleNum = $target
+        foreach ($w in $widths) { if ([math]::Floor($w * $target / $total) -lt $minBarCells) { $script:scaleNum = 1; $script:scaleDen = 1; return $false } }
+        Build; if ($layout -eq 'flat') { Assemble-Flat } else { Assemble-Stacked }
+        if (Test-Fits) { return $true }
+        $target--
     }
+    $script:scaleNum = 1; $script:scaleDen = 1; return $false
 }
-[Console]::WriteLine($line)
+if ($total -gt 0) {
+    if (Shrink-Layout 'flat') { Pad-Rows; Emit }
+    if ($fitRows -ge 2 -and (Shrink-Layout 'stacked')) { Pad-Rows; Emit }
+}
+# Stage 3: bars gone; percentages carry the heat colour instead.
+$script:scaleNum = 1; $script:scaleDen = 1; $script:barsOff = $true
+if (Try-Layouts) { Pad-Rows; Emit }
+# Stage 4: exclusion ladder, one step at a time, re-measured after each.
+foreach ($step in $ladder) { $script:F[$step] = $true; if (Try-Layouts) { Pad-Rows; Emit } }
+# Floor: nothing left to give; Claude Code truncates the overflow.
+Build; Assemble-Flat; Emit
