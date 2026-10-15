@@ -84,16 +84,20 @@ assert_fit shrink "$shr" $((stk_cells-6))
 [[ $(cells "$(row "$shr" 1)") -eq $((stk_cells-6)) ]] || { printf 'shrunk rows not padded to budget\n' >&2; exit 1; }
 ctxbar=${shr#*ctx [}; ctxbar=${ctxbar%%]*}
 [[ ${#ctxbar} -lt 12 && ${#ctxbar} -ge 5 ]] || { printf 'ctx bar not shrunk into range: %s\n' "${#ctxbar}" >&2; exit 1; }
-# Ladder: at 90 columns bars are gone and the disk label is the first casualty; parentheses survive until later.
+# Two rows keep the bars: at 90 columns the ladder has engaged (parentheses gone) but every bar is still drawn, >= 5 cells.
 lad=$(render 90)
 assert_fit ladder90 "$lad" 87
-[[ "$lad" != *"["* ]] || { printf 'bars not dropped at 90\n' >&2; exit 1; }
-# Ladder deeper: at 60 columns percentages lose parentheses, Fable is gone, 5h and 7d remain.
+[[ $(rows "$lad") -eq 2 && "$lad" == *"["* ]] || { printf 'bars dropped at 90 despite two rows: %s\n' "$lad" >&2; exit 1; }
+fivebar=${lad#*five [}; fivebar=${fivebar%%]*}; [[ ${#fivebar} -ge 5 ]] || { printf 'bar below floor at 90\n' >&2; exit 1; }
+[[ "$(row "$lad" 1)" == ⠀* || "$(row "$lad" 2)" == ⠀* ]] || { printf 'row leading pad is plain whitespace (Claude Code trims it)\n' >&2; exit 1; }
+# Single row: bars drop first, then the ladder. At 60 columns parentheses are gone, Fable is gone, 5h and 7d remain.
+printf '{"fit":{"rows":1}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
 lad60=$(render 60)
 assert_fit ladder60 "$lad60" 57
-[[ "$lad60" != *"("* ]] || { printf 'parentheses survived at 60\n' >&2; exit 1; }
-[[ "$lad60" == *"5h"* && "$lad60" == *"7d"* ]] || { printf '5h/7d dropped too early at 60: %s\n' "$lad60" >&2; exit 1; }
+[[ "$lad60" != *"["* && "$lad60" != *"("* ]] || { printf 'bars or parentheses survived at 60 single-row: %s\n' "$lad60" >&2; exit 1; }
+[[ "$lad60" == *"25%"*"20%"*"30%"* ]] || { printf 'ctx/5h/7d percentages dropped too early at 60: %s\n' "$lad60" >&2; exit 1; }
 [[ "$lad60" != *"Fable"* && "$lad60" != *"F "* ]] || { printf 'Fable survived at 60: %s\n' "$lad60" >&2; exit 1; }
+printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
 # Floor: 30 columns must not crash and must emit at most 2 rows.
 flr=$(render 30); [[ $(rows "$flr") -le 2 ]] || { printf 'floor emitted too many rows\n' >&2; exit 1; }
 # fit.rows=1 never stacks.

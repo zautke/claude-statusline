@@ -359,6 +359,9 @@ function Assemble-Stacked {
         $r1 += $t + (' ' * ($w - $wt)); $r2 += $b + (' ' * ($w - $wb))
     }
     $script:row1 = $r1 -join (Get-Sep); $script:row2 = $r2 -join (Get-Sep)
+    # Claude Code trims leading whitespace per row; pad row starts with U+2800 (renders blank, counts one cell).
+    $script:row1 = [regex]::Replace($script:row1, '^ +', { param($m) [string]::new([char]0x2800, $m.Length) })
+    $script:row2 = [regex]::Replace($script:row2, '^ +', { param($m) [string]::new([char]0x2800, $m.Length) })
 }
 
 # ---- fit pipeline: try flat then stacked at each stage; stop at the first that fits ----
@@ -380,25 +383,33 @@ if (Try-Layouts) { Emit }
 # value row, so a bar cell does not always buy a column) and stop at the first ratio that fits or breaks the floor.
 $widths = @(12); if ($null -ne $diskPct) { $widths += 12 }; if ($null -ne $tmpPct) { $widths += 15 }; if ($null -ne $fivePct) { $widths += 12 }; if ($null -ne $sevenPct) { $widths += 12 }; $widths += $fableWidth
 $total = ($widths | Measure-Object -Sum).Sum
+# Largest shared ratio in [floor, full] whose layout fits; fits is monotonic in the ratio, so binary search.
 function Shrink-Layout([string]$layout) {
-    $target = $total - 1; $script:scaleDen = $total
-    while ($target -gt 0) {
-        $script:scaleNum = $target
-        foreach ($w in $widths) { if ([math]::Floor($w * $target / $total) -lt $minBarCells) { $script:scaleNum = 1; $script:scaleDen = 1; return $false } }
+    $lo = 1; $hi = $total; $best = $null
+    foreach ($w in $widths) { $need = [int][math]::Ceiling($minBarCells * $total / $w); if ($need -gt $lo) { $lo = $need } }
+    if ($lo -gt $hi) { $script:scaleNum = 1; $script:scaleDen = 1; return $false }
+    $script:scaleDen = $total
+    while ($lo -le $hi) {
+        $mid = [int][math]::Floor(($lo + $hi) / 2); $script:scaleNum = $mid
         Build; if ($layout -eq 'flat') { Assemble-Flat } else { Assemble-Stacked }
-        if (Test-Fits) { return $true }
-        $target--
+        if (Test-Fits) { $best = $mid; $lo = $mid + 1 } else { $hi = $mid - 1 }
     }
-    $script:scaleNum = 1; $script:scaleDen = 1; return $false
+    if ($null -eq $best) { $script:scaleNum = 1; $script:scaleDen = 1; return $false }
+    $script:scaleNum = $best; Build; if ($layout -eq 'flat') { Assemble-Flat } else { Assemble-Stacked }; return $true
 }
 if ($total -gt 0) {
     if (Shrink-Layout 'flat') { Pad-Rows; Emit }
     if ($fitRows -ge 2 -and (Shrink-Layout 'stacked')) { Pad-Rows; Emit }
 }
-# Stage 3: bars gone; percentages carry the heat colour instead.
+# Stage 3 (two rows only): keep the bars. Walk the ladder with bars at the best size that fits each step.
+if ($fitRows -ge 2 -and $total -gt 0) {
+    foreach ($step in $ladder) { $script:F[$step] = $true; if (Shrink-Layout 'stacked') { Pad-Rows; Emit } }
+    $script:F = @{}
+}
+# Stage 4: bars gone; percentages carry the heat colour instead.
 $script:scaleNum = 1; $script:scaleDen = 1; $script:barsOff = $true
 if (Try-Layouts) { Pad-Rows; Emit }
-# Stage 4: exclusion ladder, one step at a time, re-measured after each.
+# Stage 5: exclusion ladder again without bars, one step at a time, re-measured after each.
 foreach ($step in $ladder) { $script:F[$step] = $true; if (Try-Layouts) { Pad-Rows; Emit } }
 # Floor: nothing left to give; Claude Code truncates the overflow.
 Build; Assemble-Flat; Emit

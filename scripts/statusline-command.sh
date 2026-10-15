@@ -237,6 +237,8 @@ assemble_stacked() {
     printf -v pad '%*s' $((w-wt)) ''; r1+=${r1:+$sep}$t$pad
     printf -v pad '%*s' $((w-wb)) ''; r2+=${r2:+$sep}$b$pad
   done
+  # Claude Code trims leading whitespace per row; pad row starts with U+2800 (renders blank, counts one cell).
+  local lead; lead=${r1%%[! ]*}; r1=${lead// /⠀}${r1:${#lead}}; lead=${r2%%[! ]*}; r2=${lead// /⠀}${r2:${#lead}}
   row1=$r1 row2=$r2
 }
 
@@ -254,24 +256,32 @@ try_layouts&&emit
 # value row, so a bar cell does not always buy a column) and stop at the first ratio that fits or breaks the floor.
 widths=; for s in "${seg_list[@]}"; do case $s in context)widths+=" $W_ctx";; disk)[[ -n $disk_pct ]]&&widths+=" $W_disk";; tmp)[[ -n $tmp_pct ]]&&widths+=" $W_tmp";; five_hour)[[ -n $five_pct ]]&&widths+=" $W_five";; seven_day)[[ -n $seven_pct ]]&&widths+=" $W_seven";; fable)widths+=" $W_fable";; esac; done
 total=0; for w in $widths; do total=$((total+w)); done
-above_floor() { local w; for w in $widths; do ((w*scale_num/scale_den<min_bar_cells))&&return 1; done; return 0; }
+# Largest shared ratio in [floor, full] whose layout fits; fits is monotonic in the ratio, so binary search.
 shrink_layout() { # $1 = flat|stacked. Sets scale and rows on success.
-  local target=$((total-1)); scale_den=$total
-  while ((target>0)); do
-    scale_num=$target; above_floor||break
-    build; "assemble_$1"; fits&&return 0
-    target=$((target-1))
+  local lo=1 hi=$total mid w need best=
+  for w in $widths; do need=$(((min_bar_cells*total+w-1)/w)); ((need>lo))&&lo=$need; done
+  ((lo<=hi))||{ scale_num=1 scale_den=1; return 1; }
+  scale_den=$total
+  while ((lo<=hi)); do
+    mid=$(((lo+hi)/2)); scale_num=$mid; build; "assemble_$1"
+    if fits; then best=$mid lo=$((mid+1)); else hi=$((mid-1)); fi
   done
-  scale_num=1 scale_den=1; return 1
+  [[ -n $best ]]||{ scale_num=1 scale_den=1; return 1; }
+  scale_num=$best; build; "assemble_$1"; return 0
 }
 if ((total>0)); then
   shrink_layout flat&&{ pad_rows; emit; }
   ((fit_rows>=2))&&shrink_layout stacked&&{ pad_rows; emit; }
 fi
-# Stage 3: bars gone; percentages carry the heat colour instead.
+# Stage 3 (two rows only): keep the bars. Walk the ladder with bars at the best size that fits each step.
+if ((fit_rows>=2&&total>0)); then
+  for step in $ladder; do F[$step]=1; shrink_layout stacked&&{ pad_rows; emit; }; done
+  F=()
+fi
+# Stage 4: bars gone; percentages carry the heat colour instead.
 scale_num=1 scale_den=1 bars_off=1
 try_layouts&&{ pad_rows; emit; }
-# Stage 4: exclusion ladder, one step at a time, re-measured after each.
+# Stage 5: exclusion ladder again without bars, one step at a time, re-measured after each.
 for step in $ladder; do F[$step]=1; try_layouts&&{ pad_rows; emit; }; done
 # Floor: nothing left to give; Claude Code truncates the overflow.
 build; assemble_flat; emit
