@@ -165,6 +165,8 @@ if ($resizeWatch -and -not $env:BRAISENLY_STATUSLINE_DISABLE_WATCH) {
             $lock = Join-Path $watchDir "resize-watch.$($proc.Id).pid"
             # Two overlapping renders must not both spawn: the directory create is the atomic mutex around check-and-spawn.
             $mutex = $null
+            # A render killed mid-spawn never removes it; reclaim a mutex older than 60s.
+            if ((Test-Path -LiteralPath "$lock.spawn") -and ([DateTime]::UtcNow - (Get-Item -LiteralPath "$lock.spawn").LastWriteTimeUtc).TotalSeconds -gt 60) { Remove-Item -LiteralPath "$lock.spawn" -Force -ErrorAction SilentlyContinue }
             try { $mutex = New-Item -ItemType Directory -Path "$lock.spawn" -ErrorAction Stop } catch { }
             if ($mutex) {
                 try {
@@ -367,7 +369,7 @@ function Build {
             }
             'fable' {
                 if ($F['fable_segment']) { continue }
-                if ($F['fable_label']) { } elseif ($F['fable_short']) { $top = "${C_LABEL}$($fableLabel.Substring(0,1))${R}" } else { $top = "${C_LABEL}${fableLabel}${R}" }
+                if ($F['fable_label']) { } elseif ($F['fable_short']) { $top = "${C_LABEL}$($fableLabel.Substring(0, ([char]::IsHighSurrogate($fableLabel, 0) ? 2 : 1)))${R}" } else { $top = "${C_LABEL}${fableLabel}${R}" }
                 if ($null -ne $fablePct) { $top = Add-Bar $top (Get-FitBar $fablePct $fableWidth); $bot = Get-Paren (Format-PctText $fablePct) }
                 else { $top = Add-Bar $top (Get-FitBar 0 $fableWidth); $bot = Get-Paren 'n/a' }
             }

@@ -112,7 +112,12 @@ start_resize_watch() {
   lock=$cache_dir/resize-watch.$pid.pid
   [[ -r $lock ]] && kill -0 "$(cat "$lock" 2>/dev/null)" 2>/dev/null && return 0
   # Two overlapping renders must not both spawn: mkdir is the atomic mutex around check-and-spawn.
-  mkdir "$lock.spawn" 2>/dev/null || return 0
+  # A render killed mid-spawn never removes it; reclaim a mutex older than 60s.
+  if ! mkdir "$lock.spawn" 2>/dev/null; then
+    local mt; mt=$(stat -c %Y "$lock.spawn" 2>/dev/null || stat -f %m "$lock.spawn" 2>/dev/null || printf '%s' "$(date +%s)")
+    (( $(date +%s)-mt>60 )) && rmdir "$lock.spawn" 2>/dev/null && mkdir "$lock.spawn" 2>/dev/null || return 0
+  fi
+  trap "rmdir '$lock.spawn' 2>/dev/null" EXIT
   if ! { [[ -r $lock ]] && kill -0 "$(cat "$lock" 2>/dev/null)" 2>/dev/null; }; then
     nohup bash "${BASH_SOURCE[0]%/*}/resize-watch.sh" --pid "$pid" --settings "$config_dir/settings.json" --interval 0.1 --settle 0.2 >/dev/null 2>&1 &
     printf '%s' $! >"$lock"
