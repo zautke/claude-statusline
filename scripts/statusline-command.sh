@@ -19,19 +19,19 @@ config_dir=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
 config_file=$config_dir/statusline.json
 cache_dir=${XDG_CACHE_HOME:-$HOME/.cache}/braisenly-statusline
 cache_file=$cache_dir/fable.json
-default_segments='["model","profile","cwd","context","disk","tmp","five_hour","seven_day","fable","drift"]'
+default_segments='["model","profile","cwd","context","disk","tmp","five_hour","seven_day","fable"]'
 
 valid_config() {
   [[ -r "$config_file" ]] || return 1
   jq -e '
-    def known: ["model","profile","cwd","context","disk","tmp","five_hour","seven_day","fable","drift"];
+    def known: ["model","profile","cwd","context","disk","tmp","five_hour","seven_day","fable"];
     (.segments // known) as $s |
     ($s|type)=="array" and ($s|all(type=="string" and IN(known[]))) and (($s|unique|length)==($s|length)) and
     ((.labels//{})|to_entries|all(.value|type=="string")) and
     ((.widths//{})|to_entries|all(.value|type=="number" and floor==. and .>=1 and .<=128)) and
     ((.thresholds.usage.warn//60)>=0) and ((.thresholds.usage.warn//60)<=(.thresholds.usage.critical//80)) and ((.thresholds.usage.critical//80)<=100) and
-    ((.thresholds.drift.warn//70)>=0) and ((.thresholds.drift.warn//70)<=(.thresholds.drift.good//90)) and ((.thresholds.drift.good//90)<=100) and
     ((.colors//{})|to_entries|all(.value|type=="array" and length==3 and all(type=="number" and floor==. and .>=0 and .<=255))) and
+    ((.fit.reserve//0)|type=="number" and floor==. and .>=0 and .<=200) and ((.fit.min_bar_cells//5)|type=="number" and floor==. and .>=1 and .<=128) and
     ((.fable.refresh_seconds//600)>=60) and ((.fable.max_stale_seconds//86400)>=60)
   ' "$config_file" >/dev/null 2>&1
 }
@@ -53,8 +53,8 @@ max_stale=$(get_cfg '.fable.max_stale_seconds' '86400')
 fable_model=$(get_cfg '.fable.model' '"Fable"')
 usage_warn=$(get_cfg '.thresholds.usage.warn' '60')
 usage_critical=$(get_cfg '.thresholds.usage.critical' '80')
-drift_warn=$(get_cfg '.thresholds.drift.warn' '70')
-drift_good=$(get_cfg '.thresholds.drift.good' '90')
+fit_reserve=$(get_cfg '.fit.reserve' '0')
+min_bar_cells=$(get_cfg '.fit.min_bar_cells' '5')
 if [[ -n $cfg ]]; then
   IFS=$'\t' read -r ok_r ok_g ok_b <<<"$(jq -r '(.colors.ok//[60,180,80])|@tsv' "$cfg")"
   IFS=$'\t' read -r warn_r warn_g warn_b <<<"$(jq -r '(.colors.warn//[200,160,0])|@tsv' "$cfg")"
@@ -118,7 +118,11 @@ else reset=$'\033[0m'; model_color=$'\033[1;38;5;75m'; label_color=$'\033[38;5;2
 sep() { printf '%s ● %s' "$sep_color" "$reset"; }
 fmt_bytes() { local b=$1; if ((b>=1073741824)); then awk -v b="$b" 'BEGIN{printf "%.1fG",b/1073741824}'; elif ((b>=1048576)); then awk -v b="$b" 'BEGIN{printf "%.1fM",b/1048576}'; elif ((b>=1024)); then awk -v b="$b" 'BEGIN{printf "%.1fK",b/1024}'; else printf '%dB' "$b"; fi; }
 pct_text() { local p=$1 r g b; if ((p<=usage_warn)); then r=$ok_r g=$ok_g b=$ok_b; elif ((p<=usage_critical)); then r=$warn_r g=$warn_g b=$warn_b; else r=$crit_r g=$crit_g b=$crit_b; fi; if [[ -n ${NO_COLOR:-} ]]; then printf '%d%%' "$p"; else printf '\033[38;2;%d;%d;%dm%d%%%s' "$r" "$g" "$b" "$p" "$reset"; fi; }
-drift_text() { local p=$1 r g b; if ((p>=drift_good)); then r=$ok_r g=$ok_g b=$ok_b; elif ((p>=drift_warn)); then r=$warn_r g=$warn_g b=$warn_b; else r=$crit_r g=$crit_g b=$crit_b; fi; if [[ -n ${NO_COLOR:-} ]]; then printf '%d%%' "$p"; else printf '\033[38;2;%d;%d;%dm%d%%%s' "$r" "$g" "$b" "$p" "$reset"; fi; }
+# Fit state: bars_off=1 drops every bar; scale_num/scale_den shrink configured widths uniformly.
+bars_off=0 scale_num=1 scale_den=1
+bar_w() { local w; w=$(get_width "$1" "$2"); printf '%s' $((w*scale_num/scale_den)); }
+# bar plus trailing space, or nothing when bars are dropped — keeps single spacing either way.
+barsp() { ((bars_off)) && return; bar "$@"; printf ' '; }
 bar() {
   local pct=$1 width=${2:-20} inverted=${3:-0} full i pos r g b p2
   ((pct<0))&&pct=0; ((pct>100))&&pct=100
@@ -135,23 +139,49 @@ bar() {
 model=$(jq -r '.model.display_name//"Claude"' <<<"$input"); used=$(jq -r '.context_window.used_percentage//"null"' <<<"$input"); total_in=$(jq -r '.context_window.total_input_tokens//0' <<<"$input"); ctx=$(jq -r '.context_window.context_window_size//0' <<<"$input"); five=$(jq -r '.rate_limits.five_hour.used_percentage//"null"' <<<"$input"); seven=$(jq -r '.rate_limits.seven_day.used_percentage//"null"' <<<"$input"); session=$(jq -r '.session_id//empty' <<<"$input")
 fable=null
 if [[ -r $cache_file ]]; then at=$(jq -r '.fetched_at//0' "$cache_file" 2>/dev/null||printf 0); [[ $at =~ ^[0-9]+$ ]]&&(( $(date +%s)-at<=max_stale ))&&fable=$(jq -r '.used_percentage//"null"' "$cache_file" 2>/dev/null||printf null); fi
-drift= tag=baseline provider=
-if [[ -n $session && -r $config_dir/state/drift/$session.jsonl ]]; then last=$(tail -n 30 "$config_dir/state/drift/$session.jsonl"|jq -rs '[.[]|select(.kind=="score")]|last//empty' 2>/dev/null); [[ -n $last && $last != null ]]&&{ drift=$(jq -r .score<<<"$last"); tag=$(jq -r .tag<<<"$last"); provider=$(jq -r '.provider//""'<<<"$last"); }; fi
 
 render_model(){ printf '%s%s%s' "$model_color" "$model" "$reset"; }
 render_profile(){ local p=${CLAUDE_PROFILE:-} b; if [[ -z $p && -n ${CLAUDE_CONFIG_DIR:-} ]]; then b=${CLAUDE_CONFIG_DIR##*/}; [[ $b == .claude-* ]]&&p=${b#.claude-}; fi; [[ -n $p ]]&&printf '%sprof%s %s%s%s' "$label_color" "$reset" "$value_color" "$p" "$reset"; }
 render_cwd(){ local p=${PWD/#$HOME/\~}; ((${#p}>30))&&p="…/$(basename "$(dirname "$PWD")")/$(basename "$PWD")"; printf '%s%s%s' "$value_color" "$p" "$reset"; }
-render_context(){ local v w; w=$(get_width context 12); printf '%s%s%s ' "$label_color" "$(get_label context ctx)" "$reset"; if [[ $used != null && $ctx -gt 0 ]]; then v=$(printf '%.0f' "$used"); printf '%s %s%s%s/%s%s%s (%s)' "$(bar "$v" "$w")" "$value_color" "$(fmt_bytes "$total_in")" "$reset" "$value_color" "$(fmt_bytes "$ctx")" "$reset" "$(pct_text "$v")"; else bar 0 "$w"; fi; }
-render_disk(){ local x t a p w; x=$(df -k / 2>/dev/null|tail -1); [[ -n $x ]]||return; t=$(awk '{print $2}'<<<"$x"); a=$(awk '{print $4}'<<<"$x"); ((t>0))||return; p=$(((t-a)*100/t)); w=$(get_width disk 12); printf '%s%s%s %s %s%s%s free' "$label_color" "$(get_label disk disk)" "$reset" "$(bar "$p" "$w")" "$value_color" "$(fmt_bytes $((a*1024)))" "$reset"; }
-render_tmp(){ local x d t a p w; x=$(df -k /tmp 2>/dev/null|tail -1); d=$(awk '{print $1}'<<<"$x"); [[ $d == tmpfs ]]||return; t=$(awk '{print $2}'<<<"$x"); a=$(awk '{print $4}'<<<"$x"); ((t>0))||return; p=$(((t-a)*100/t)); w=$(get_width tmp 15); printf '%s%s%s %s %s%s%s free' "$label_color" "$(get_label tmp /tmp)" "$reset" "$(bar "$p" "$w")" "$value_color" "$(fmt_bytes $((a*1024)))" "$reset"; }
-render_usage(){ local k=$1 d=$2 p=$3 v w; [[ $p != null && -n $p ]]||return; v=$(printf '%.0f' "$p"); w=$(get_width "$k" 12); printf '%s%s%s %s (%s)' "$label_color" "$(get_label "$k" "$d")" "$reset" "$(bar "$v" "$w")" "$(pct_text "$v")"; }
-render_fable(){ local p=$1 v w; w=$(get_width fable 12); if [[ $p == null || -z $p ]]; then printf '%s%s%s %s (n/a)' "$label_color" "$(get_label fable Fable)" "$reset" "$(bar 0 "$w")"; else v=$(printf '%.0f' "$p"); printf '%s%s%s %s (%s)' "$label_color" "$(get_label fable Fable)" "$reset" "$(bar "$v" "$w")" "$(pct_text "$v")"; fi; }
-render_drift(){ local w marker drift_label; w=$(get_width drift 10); drift_label=$(get_label drift drift); if [[ -z ${TMUX:-} && -z ${NO_COLOR:-} ]]; then printf '%s\033]8;;file://%s/.claude/scripts/drift-menu-open.command\033\\%s\033]8;;\033\\%s ' "$label_color" "$HOME" "$drift_label" "$reset"; else printf '%s%s%s ' "$label_color" "$drift_label" "$reset"; fi; if [[ -n $drift ]]; then case $provider in groq)marker=⬢;;gemini)marker=◉;;openai)marker=◈;;ollama)marker=◇;;*)marker=·;;esac; printf '%s %s(%s%s)%s (%s)' "$(bar "$drift" "$w" 1)" "$value_color" "$tag" "$marker" "$reset" "$(drift_text "$drift")"; else printf '%s %s(baseline)%s' "$(bar 100 "$w" 1)" "$value_color" "$reset"; fi; }
+render_context(){ local v w; w=$(bar_w context 12); printf '%s%s%s ' "$label_color" "$(get_label context ctx)" "$reset"; if [[ $used != null && $ctx -gt 0 ]]; then v=$(printf '%.0f' "$used"); printf '%s%s%s%s/%s%s%s (%s)' "$(barsp "$v" "$w")" "$value_color" "$(fmt_bytes "$total_in")" "$reset" "$value_color" "$(fmt_bytes "$ctx")" "$reset" "$(pct_text "$v")"; else ((bars_off))||bar 0 "$w"; fi; }
+render_disk(){ local x t a p w; x=$(df -k / 2>/dev/null|tail -1); [[ -n $x ]]||return; t=$(awk '{print $2}'<<<"$x"); a=$(awk '{print $4}'<<<"$x"); ((t>0))||return; p=$(((t-a)*100/t)); w=$(bar_w disk 12); printf '%s%s%s %s%s%s%s free' "$label_color" "$(get_label disk disk)" "$reset" "$(barsp "$p" "$w")" "$value_color" "$(fmt_bytes $((a*1024)))" "$reset"; }
+render_tmp(){ local x d t a p w; x=$(df -k /tmp 2>/dev/null|tail -1); d=$(awk '{print $1}'<<<"$x"); [[ $d == tmpfs ]]||return; t=$(awk '{print $2}'<<<"$x"); a=$(awk '{print $4}'<<<"$x"); ((t>0))||return; p=$(((t-a)*100/t)); w=$(bar_w tmp 15); printf '%s%s%s %s%s%s%s free' "$label_color" "$(get_label tmp /tmp)" "$reset" "$(barsp "$p" "$w")" "$value_color" "$(fmt_bytes $((a*1024)))" "$reset"; }
+render_usage(){ local k=$1 d=$2 p=$3 v w; [[ $p != null && -n $p ]]||return; v=$(printf '%.0f' "$p"); w=$(bar_w "$k" 12); printf '%s%s%s %s(%s)' "$label_color" "$(get_label "$k" "$d")" "$reset" "$(barsp "$v" "$w")" "$(pct_text "$v")"; }
+render_fable(){ local p=$1 v w; w=$(bar_w fable 12); if [[ $p == null || -z $p ]]; then printf '%s%s%s %s(n/a)' "$label_color" "$(get_label fable Fable)" "$reset" "$(barsp 0 "$w")"; else v=$(printf '%.0f' "$p"); printf '%s%s%s %s(%s)' "$label_color" "$(get_label fable Fable)" "$reset" "$(barsp "$v" "$w")" "$(pct_text "$v")"; fi; }
 
 segments=$default_segments; [[ -n $cfg ]]&&segments=$(jq -c '.segments//$d' --argjson d "$default_segments" "$cfg")
-first=1
-while IFS= read -r segment; do
-  rendered=; case $segment in model)rendered=$(render_model);;profile)rendered=$(render_profile);;cwd)rendered=$(render_cwd);;context)rendered=$(render_context);;disk)rendered=$(render_disk);;tmp)rendered=$(render_tmp);;five_hour)rendered=$(render_usage five_hour 5h "$five");;seven_day)rendered=$(render_usage seven_day 7d "$seven");;fable)rendered=$(render_fable "$fable");;drift)rendered=$(render_drift);;esac
-  [[ -n $rendered ]]||continue; ((first))||sep; printf '%s' "$rendered"; first=0
-done < <(jq -r '.[]'<<<"$segments")
-printf '\n'
+render_line() {
+  local first=1 segment rendered
+  while IFS= read -r segment; do
+    rendered=; case $segment in model)rendered=$(render_model);;profile)rendered=$(render_profile);;cwd)rendered=$(render_cwd);;context)rendered=$(render_context);;disk)rendered=$(render_disk);;tmp)rendered=$(render_tmp);;five_hour)rendered=$(render_usage five_hour 5h "$five");;seven_day)rendered=$(render_usage seven_day 7d "$seven");;fable)rendered=$(render_fable "$fable");;esac
+    [[ -n $rendered ]]||continue; ((first))||sep; printf '%s' "$rendered"; first=0
+  done < <(jq -r '.[]'<<<"$segments")
+}
+# Display cells of a rendered line: strip SGR, count code points (all glyphs used are single-width).
+cells() { local s; s=$(sed $'s/\x1b\\[[0-9;]*m//g' <<<"$1"); jq -Rr length <<<"$s"; }
+# Configured widths, one per line, for the segments that actually rendered a bar.
+bar_widths() {
+  local segment
+  while IFS= read -r segment; do
+    case $segment in context|fable)get_width "$segment" 12;;five_hour)[[ $five != null ]]&&get_width five_hour 12;;seven_day)[[ $seven != null ]]&&get_width seven_day 12;;disk)[[ -n $(render_disk) ]]&&get_width disk 12;;tmp)[[ -n $(render_tmp) ]]&&get_width tmp 15;;esac
+  done < <(jq -r '.[]'<<<"$segments")
+}
+
+line=$(render_line)
+# Fit to the terminal: Claude Code exports COLUMNS (v2.1.153+) and draws the row ~3 cells narrower than that.
+if [[ ${COLUMNS:-} =~ ^[0-9]+$ ]] && ((COLUMNS>0)); then
+  budget=$((COLUMNS-3-fit_reserve)); ((budget<1))&&budget=1
+  n=$(cells "$line")
+  if ((n>budget)); then
+    widths=$(bar_widths); total=0; for w in $widths; do total=$((total+w)); done; target=$((total-(n-budget)))
+    # Shrink every bar by one ratio; if any bar would land below the floor, drop all bars instead.
+    if ((total>0&&target>0)); then
+      scale_num=$target scale_den=$total
+      for w in $widths; do ((w*scale_num/scale_den<min_bar_cells))&&bars_off=1; done
+    else bars_off=1; fi
+    line=$(render_line); n=$(cells "$line")
+    # Floor division leaves slack; pad to the budget so the right edge lands on the same column.
+    ((n<budget))&&line+=$(printf '%*s' $((budget-n)) '')
+  fi
+fi
+printf '%s\n' "$line"

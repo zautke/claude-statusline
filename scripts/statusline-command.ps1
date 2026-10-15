@@ -1,6 +1,6 @@
 #!/usr/bin/env pwsh
 # Claude Code statusline — PowerShell 7+ port of statusline-command.sh
-# Feature-parity: RGB gradient bars, sub-pixel precision, disk/tmp/rate-limit/drift sections.
+# Feature-parity: RGB gradient bars, disk/tmp/rate-limit/Fable sections, COLUMNS-aware bar fitting.
 
 param(
     [Alias('r')][switch]$RefreshFable,
@@ -38,12 +38,16 @@ $fableModel = 'Fable'
 $fableWidth = 12
 $fableRefreshSeconds = 600
 $fableMaxStale = 86400
+$fitReserve = 0
+$minBarCells = 5
 $configPath = Join-Path $configDir 'statusline.json'
 if (Test-Path -LiteralPath $configPath) {
     try {
         $cfg = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
         if ($cfg.fable.model) { $fableModel = [string]$cfg.fable.model; $fableLabel = $fableModel }
         if ($cfg.widths.fable) { $fableWidth = [int]$cfg.widths.fable }
+        if ($null -ne $cfg.fit.reserve) { $fitReserve = [int]$cfg.fit.reserve }
+        if ($cfg.fit.min_bar_cells) { $minBarCells = [int]$cfg.fit.min_bar_cells }
         if ($cfg.fable.refresh_seconds) { $fableRefreshSeconds = [int64]$cfg.fable.refresh_seconds }
         if ($cfg.fable.max_stale_seconds) { $fableMaxStale = [int64]$cfg.fable.max_stale_seconds }
     } catch { }
@@ -164,14 +168,6 @@ function Format-PctText([int]$p) {
     return "$(Get-PctColor $p)${p}%${R}"
 }
 
-# Format-DriftPctText — inverted thresholds (drift-high = good = green)
-function Format-DriftPctText([int]$p) {
-    if     ($p -ge 90) { $c = "$ESC[38;2;60;180;80m" }
-    elseif ($p -ge 70) { $c = "$ESC[38;2;200;160;0m" }
-    else               { $c = "$ESC[38;2;180;60;40m" }
-    return "${c}${p}%${R}"
-}
-
 function Format-Bytes([long]$b) {
     if ($b -ge 1073741824) { return "{0:F1}G" -f ($b / 1073741824) }
     if ($b -ge 1048576)    { return "{0:F1}M" -f ($b / 1048576) }
@@ -204,6 +200,20 @@ function Get-Bar([int]$pct, [int]$width = 20, [int]$inverted = 0) {
 
 function Get-Sep { return "${C_SEP} ● ${R}" }
 
+# Fit state: $barsOff drops every bar; $scaleNum/$scaleDen shrink configured widths uniformly.
+$script:barsOff = $false
+$script:scaleNum = 1
+$script:scaleDen = 1
+$script:barWidths = [System.Collections.Generic.List[int]]::new()
+# Bar plus trailing space, or nothing when bars are dropped — keeps single spacing either way.
+function Get-SegBar([int]$pct, [int]$width) {
+    if ($script:barsOff) { return '' }
+    $script:barWidths.Add($width)
+    return "$(Get-Bar $pct ([int][math]::Floor($width * $script:scaleNum / $script:scaleDen))) "
+}
+# Display cells of a rendered line: strip SGR, count chars (all glyphs used are single-width BMP).
+function Get-Cells([string]$s) { return ($s -replace "$ESC\[[0-9;]*m", '').Length }
+
 # Parse JSON — no jq needed
 $j       = $input_data | ConvertFrom-Json
 $model   = if ($j.model.display_name) { $j.model.display_name } else { "Claude" }
@@ -212,29 +222,9 @@ $totalIn = $j.context_window.total_input_tokens
 $ctxSize = $j.context_window.context_window_size
 $rl5h    = $j.rate_limits.five_hour.used_percentage
 $rl7d    = $j.rate_limits.seven_day.used_percentage
-$sessionId = $j.session_id
 
-# drift quotient — independent co-agent coherence score for this session
-$driftScore = $null
-$driftTag = 'baseline'
-$driftProvider = ''
-if ($sessionId) {
-    $driftFile = Join-Path $HOME ".claude/state/drift/$sessionId.jsonl"
-    if (Test-Path $driftFile) {
-        $last = Get-Content $driftFile -Tail 30 -ErrorAction SilentlyContinue |
-            ForEach-Object { try { $_ | ConvertFrom-Json } catch {} } |
-            Where-Object { $_ -and $_.kind -eq 'score' } |
-            Select-Object -Last 1
-        if ($last) {
-            $driftScore = [int]$last.score
-            $driftTag = [string]$last.tag
-            if ($last.PSObject.Properties['provider']) {
-                $driftProvider = [string]$last.provider
-            }
-        }
-    }
-}
-
+function Build-Line {
+$script:barWidths.Clear()
 $out = "${C_MODEL}${model}${R}"
 
 # Current directory
@@ -251,9 +241,9 @@ $out += Get-Sep
 $out += "${C_LABEL}ctx${R} "
 if ($null -ne $usedPct -and $ctxSize -gt 0) {
     $ui   = [int][math]::Round($usedPct)
-    $out += "$(Get-Bar $ui 12) ${C_VAL}$(Format-Bytes $totalIn)${R}/${C_VAL}$(Format-Bytes $ctxSize)${R} ($(Format-PctText $ui))"
+    $out += "$(Get-SegBar $ui 12)${C_VAL}$(Format-Bytes $totalIn)${R}/${C_VAL}$(Format-Bytes $ctxSize)${R} ($(Format-PctText $ui))"
 } else {
-    $out += Get-Bar 0 12
+    $out += (Get-SegBar 0 12).TrimEnd()
 }
 
 # Disk space — platform-aware
@@ -262,7 +252,7 @@ if ($IsWindows) {
     if ($drive -and ($drive.Used + $drive.Free) -gt 0) {
         $total = $drive.Used + $drive.Free
         $dp    = [int]($drive.Used * 100 / $total)
-        $out  += "$(Get-Sep)${C_LABEL}disk${R} $(Get-Bar $dp 12) ${C_VAL}$(Format-Bytes ([long]$drive.Free))${R} free"
+        $out  += "$(Get-Sep)${C_LABEL}disk${R} $(Get-SegBar $dp 12)${C_VAL}$(Format-Bytes ([long]$drive.Free))${R} free"
     }
 } else {
     # macOS / Linux
@@ -272,7 +262,7 @@ if ($IsWindows) {
         $dt = [long]$parts[1]; $da = [long]$parts[3]
         if ($dt -gt 0) {
             $dp   = [int](($dt - $da) * 100 / $dt)
-            $out += "$(Get-Sep)${C_LABEL}disk${R} $(Get-Bar $dp 12) ${C_VAL}$(Format-Bytes ($da * 1024))${R} free"
+            $out += "$(Get-Sep)${C_LABEL}disk${R} $(Get-SegBar $dp 12)${C_VAL}$(Format-Bytes ($da * 1024))${R} free"
         }
     }
     $tfOut = (df -k /tmp 2>$null | Select-Object -Last 1)
@@ -282,7 +272,7 @@ if ($IsWindows) {
         $tt = [long]$parts[1]; $ta = [long]$parts[3]
         if ($tt -gt 0) {
             $tp   = [int](($tt - $ta) * 100 / $tt)
-            $out += "$(Get-Sep)${C_LABEL}/tmp${R} $(Get-Bar $tp 15) ${C_VAL}$(Format-Bytes ($ta * 1024))${R} free"
+            $out += "$(Get-Sep)${C_LABEL}/tmp${R} $(Get-SegBar $tp 15)${C_VAL}$(Format-Bytes ($ta * 1024))${R} free"
         }
     }
 }
@@ -290,38 +280,43 @@ if ($IsWindows) {
 # Rate limits (hidden when absent — Claude.ai subscribers only)
 if ($null -ne $rl5h) {
     $v    = [int][math]::Round($rl5h)
-    $out += "$(Get-Sep)${C_LABEL}5h${R} $(Get-Bar $v 12) ($(Format-PctText $v))"
+    $out += "$(Get-Sep)${C_LABEL}5h${R} $(Get-SegBar $v 12)($(Format-PctText $v))"
 }
 if ($null -ne $rl7d) {
     $v    = [int][math]::Round($rl7d)
-    $out += "$(Get-Sep)${C_LABEL}7d${R} $(Get-Bar $v 12) ($(Format-PctText $v))"
+    $out += "$(Get-Sep)${C_LABEL}7d${R} $(Get-SegBar $v 12)($(Format-PctText $v))"
 }
 
 # Fable usage — show empty bar while cache is unavailable; never invent a percentage.
 $out += Get-Sep
 $out += "${C_LABEL}${fableLabel}${R} "
 if ($null -ne $fablePct) {
-    $out += "$(Get-Bar $fablePct $fableWidth) ($(Format-PctText $fablePct))"
+    $out += "$(Get-SegBar $fablePct $fableWidth)($(Format-PctText $fablePct))"
 } else {
-    $out += "$(Get-Bar 0 $fableWidth) (n/a)"
+    $out += "$(Get-SegBar 0 $fableWidth)(n/a)"
+}
+return $out
 }
 
-# drift quotient block — inverted bar (high = good = green-filled)
-# ◆ marker = Anthropic Haiku primary; ◇ marker = Ollama fallback.
-# Bar is 10 cells (compact) — tag and percentage trail to the right.
-$out += Get-Sep
-$out += "${C_LABEL}drift${R} "
-if ($null -ne $driftScore) {
-    $provMarker = switch ($driftProvider) {
-        'groq'      { '⬢' }
-        'gemini'    { '◉' }
-        'openai'    { '◈' }
-        'ollama'    { '◇' }
-        default     { '·' }
+$line = Build-Line
+# Fit to the terminal: Claude Code exports COLUMNS (v2.1.153+) and draws the row ~3 cells narrower than that.
+$columns = 0
+if ($env:COLUMNS -match '^\d+$') { $columns = [int]$env:COLUMNS }
+if ($columns -gt 0) {
+    $budget = [math]::Max(1, $columns - 3 - $fitReserve)
+    $n = Get-Cells $line
+    if ($n -gt $budget) {
+        $total = 0; foreach ($w in $script:barWidths) { $total += $w }
+        $target = $total - ($n - $budget)
+        # Shrink every bar by one ratio; if any bar would land below the floor, drop all bars instead.
+        if ($total -gt 0 -and $target -gt 0) {
+            $script:scaleNum = $target; $script:scaleDen = $total
+            foreach ($w in $script:barWidths) { if ([math]::Floor($w * $target / $total) -lt $minBarCells) { $script:barsOff = $true } }
+        } else { $script:barsOff = $true }
+        $line = Build-Line
+        $n = Get-Cells $line
+        # Floor division leaves slack; pad to the budget so the right edge lands on the same column.
+        if ($n -lt $budget) { $line += ' ' * ($budget - $n) }
     }
-    $out += "$(Get-Bar $driftScore 10 1) ${C_VAL}(${driftTag}${provMarker})${R} ($(Format-DriftPctText $driftScore))"
-} else {
-    $out += "$(Get-Bar 100 10 1) ${C_VAL}(baseline)${R}"
 }
-
-[Console]::WriteLine($out)
+[Console]::WriteLine($line)

@@ -49,10 +49,32 @@ week=${plain#*week [}; week=${week%%]*}
 
 printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
 fallback=$(printf '%s' "$payload" | NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 bash "$ROOT/scripts/statusline-command.sh")
-[[ "$fallback" == *"Claude"*"ctx"*"5h"*"7d"*"Fable"*"drift"* ]] || {
+[[ "$fallback" == *"Claude"*"ctx"*"5h"*"7d"*"Fable"* ]] || {
   printf 'invalid config did not fall back to defaults\n' >&2
   exit 1
 }
+[[ "$fallback" != *"drift"* ]] || { printf 'drift segment still rendered\n' >&2; exit 1; }
+
+# Terminal fit: COLUMNS budget is COLUMNS-3. Wide terminal leaves bars untouched and unpadded.
+cells() { sed $'s/\x1b\\[[0-9;]*m//g' <<<"$1" | jq -Rr length; }
+wide=$(printf '%s' "$payload" | COLUMNS=400 NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 bash "$ROOT/scripts/statusline-command.sh")
+[[ "$wide" == "$fallback" ]] || { printf 'wide terminal changed the render\n' >&2; exit 1; }
+# Mid width: bars shrink uniformly to >= 5 cells, line padded to exactly the budget.
+full_cells=$(cells "$fallback")
+mid=$((full_cells-20+3))
+fit=$(printf '%s' "$payload" | COLUMNS=$mid NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 bash "$ROOT/scripts/statusline-command.sh")
+[[ $(cells "$fit") -eq $((mid-3)) ]] || { printf 'fit width mismatch: %s vs %s\n' "$(cells "$fit")" "$((mid-3))" >&2; exit 1; }
+ctxbar=${fit#*ctx [}; ctxbar=${ctxbar%%]*}
+[[ ${#ctxbar} -lt 12 && ${#ctxbar} -ge 5 ]] || { printf 'ctx bar not shrunk into range: %s\n' "${#ctxbar}" >&2; exit 1; }
+# Narrow: any bar below floor drops every bar; no padding beyond budget is added.
+narrow=$(printf '%s' "$payload" | COLUMNS=60 NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 bash "$ROOT/scripts/statusline-command.sh")
+[[ "$narrow" != *"["* ]] || { printf 'bars not dropped at narrow width\n' >&2; exit 1; }
+[[ "$narrow" == *"ctx 1000B/195.3K"* ]] || { printf 'bar removal left bad spacing: %s\n' "$narrow" >&2; exit 1; }
+# Reserve shrinks the budget.
+printf '{"fit":{"reserve":20}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
+res=$(printf '%s' "$payload" | COLUMNS=$((mid+20)) NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 bash "$ROOT/scripts/statusline-command.sh")
+[[ $(cells "$res") -eq $((mid-3)) ]] || { printf 'reserve not applied\n' >&2; exit 1; }
+printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
 
 bash "$ROOT/scripts/statusline-command.sh" --help | grep -q '^Usage:'
 
@@ -64,17 +86,17 @@ SH
 chmod +x "$TMP/bin/curl"
 export PATH="$TMP/bin:$PATH"
 export CLAUDE_CODE_OAUTH_TOKEN='secret-test-token'
-rm -f "$XDG_CACHE_HOME/braisenly-statusline/fable.json"
+rm -f "$XDG_CACHE_HOME/braisenly-statusline/fable.json" "$XDG_CACHE_HOME/braisenly-statusline/next_refresh"
 export FAKE_USAGE_RESPONSE='{"limits":[{"kind":"weekly_scoped","scope":{"model":{"display_name":"Fable"}},"used_percentage":67,"resets_at":"soon"}]}'
 bash "$ROOT/scripts/statusline-command.sh" --refresh-fable
 jq -e '.used_percentage==67 and .resets_at=="soon" and (.accessToken|not)' "$XDG_CACHE_HOME/braisenly-statusline/fable.json" >/dev/null
 
-rm -f "$XDG_CACHE_HOME/braisenly-statusline/fable.json"
+rm -f "$XDG_CACHE_HOME/braisenly-statusline/fable.json" "$XDG_CACHE_HOME/braisenly-statusline/next_refresh"
 export FAKE_USAGE_RESPONSE='{"limits":[{"kind":"weekly_scoped","scope":{"model":{"display_name":"Fable 5"}},"percent":73,"resets_at":"later-percent"}]}'
 bash "$ROOT/scripts/statusline-command.sh" --refresh-fable
 jq -e '.used_percentage==73 and .resets_at=="later-percent"' "$XDG_CACHE_HOME/braisenly-statusline/fable.json" >/dev/null
 
-rm -f "$XDG_CACHE_HOME/braisenly-statusline/fable.json"
+rm -f "$XDG_CACHE_HOME/braisenly-statusline/fable.json" "$XDG_CACHE_HOME/braisenly-statusline/next_refresh"
 export FAKE_USAGE_RESPONSE='{"fable":{"used_percentage":55,"resets_at":"later"}}'
 bash "$ROOT/scripts/statusline-command.sh" --refresh-fable
 jq -e '.used_percentage==55 and .resets_at=="later"' "$XDG_CACHE_HOME/braisenly-statusline/fable.json" >/dev/null

@@ -20,11 +20,11 @@ Operate on the active profile only: `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`. Prese
 
 Edit `statusline.json` atomically. Start from `statusline.example.json` when absent. Apply only requested fields.
 
-- `segments`: unique ordered subset of `model`, `profile`, `cwd`, `context`, `disk`, `tmp`, `five_hour`, `seven_day`, `fable`, `drift`. Omission hides a segment.
+- `segments`: unique ordered subset of `model`, `profile`, `cwd`, `context`, `disk`, `tmp`, `five_hour`, `seven_day`, `fable`. Omission hides a segment.
 - `labels`: string labels keyed by segment.
 - `widths`: integer indicator lengths from 1 through 128.
 - `thresholds.usage`: `0 <= warn <= critical <= 100`.
-- `thresholds.drift`: `0 <= warn <= good <= 100`.
+- `fit`: `reserve` cells (0 through 200) held back from the `COLUMNS` budget, and `min_bar_cells` (1 through 128); bars shrink uniformly to fit `COLUMNS - 3 - reserve`, drop entirely when any bar would fall below the floor, and the line is space-padded to the budget after shrinking.
 - `colors`: `ok`, `warn`, and `critical`, each exactly three integer Red-Green-Blue values from 0 through 255.
 - `fable`: model display name, refresh interval of at least 60 seconds, and maximum stale interval of at least 60 seconds.
 
