@@ -290,7 +290,7 @@ $sevenPct = if ($null -ne $rl7d) { [int][math]::Round($rl7d) } else { $null }
 
 # ---- exclusion ladder: ordered flags the builders consult; each step buys cells when nothing else fits ----
 $defaultLadder = @('disk_label','ctx_int','no_parens','disk_int','ctx_no_total','no_free','fable_short','disk_value','ctx_no_used','fable_label','fable_segment','seven_label','five_label','ctx_label','seven_segment','five_segment')
-$ladder = $defaultLadder; $fitRows = 2
+$ladder = $defaultLadder; $fitRows = 1
 if ($cfg) {
     if ($cfg.fit.ladder -is [array] -and @($cfg.fit.ladder | Where-Object { $_ -notin $defaultLadder }).Count -eq 0) { $ladder = @($cfg.fit.ladder) }
     if ($cfg.fit.rows -in 1, 2) { $fitRows = [int]$cfg.fit.rows }

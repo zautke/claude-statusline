@@ -68,7 +68,8 @@ assert_fit() { # $1=label $2=output $3=budget: every row <= budget, stacked rows
 wide=$(render 400)
 [[ "$wide" == "$fallback" ]] || { printf 'wide terminal changed the render\n' >&2; exit 1; }
 full_cells=$(cells "$fallback")
-# Stacked: a width that fits two rows at full bars but not one row. Separators must align on both rows, bars untouched.
+# Stacked (opt-in rows:2): a width that fits two rows at full bars but not one row. Separators align, bars untouched.
+printf '{"fit":{"rows":2}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
 stk=$(render $((full_cells-10+3)))
 [[ $(rows "$stk") -eq 2 ]] || { printf 'expected stacked layout, got %s rows\n' "$(rows "$stk")" >&2; exit 1; }
 assert_fit stacked "$stk" $((full_cells-10))
@@ -90,8 +91,8 @@ assert_fit ladder90 "$lad" 87
 [[ $(rows "$lad") -eq 2 && "$lad" == *"["* ]] || { printf 'bars dropped at 90 despite two rows: %s\n' "$lad" >&2; exit 1; }
 fivebar=${lad#*five [}; fivebar=${fivebar%%]*}; [[ ${#fivebar} -ge 5 ]] || { printf 'bar below floor at 90\n' >&2; exit 1; }
 [[ "$(row "$lad" 1)" == ⠀* || "$(row "$lad" 2)" == ⠀* ]] || { printf 'row leading pad is plain whitespace (Claude Code trims it)\n' >&2; exit 1; }
-# Single row: bars drop first, then the ladder. At 60 columns parentheses are gone, Fable is gone, 5h and 7d remain.
-printf '{"fit":{"rows":1}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
+# Single row (default): bars drop first, then the ladder. At 60 columns parentheses and Fable are gone.
+printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
 lad60=$(render 60)
 assert_fit ladder60 "$lad60" 57
 [[ "$lad60" != *"["* && "$lad60" != *"("* ]] || { printf 'bars or parentheses survived at 60 single-row: %s\n' "$lad60" >&2; exit 1; }
@@ -100,8 +101,8 @@ assert_fit ladder60 "$lad60" 57
 printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
 # Floor: 30 columns must not crash and must emit at most 2 rows.
 flr=$(render 30); [[ $(rows "$flr") -le 2 ]] || { printf 'floor emitted too many rows\n' >&2; exit 1; }
-# fit.rows=1 never stacks.
-printf '{"fit":{"rows":1}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
+# Default (rows:1) never stacks.
+printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
 one=$(render $((full_cells-10+3)))
 [[ $(rows "$one") -eq 1 ]] || { printf 'fit.rows=1 still stacked\n' >&2; exit 1; }
 assert_fit rows1 "$one" $((full_cells-10))
@@ -114,10 +115,10 @@ assert_fit reserve "$res" $((full_cells-10))
 printf '{"fit":{"rows":1,"ladder":["ctx_label"]}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
 cl=$(render 90)
 [[ "$cl" != *"ctx"* && "$cl" == *"(25%)"* && "$cl" == *"Fable"* ]] || { printf 'custom ladder not honoured: %s\n' "$cl" >&2; exit 1; }
-# Invalid ladder entry rejects the config; defaults resume (stacked at the stacked width).
-printf '{"fit":{"ladder":["bogus"]}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
-bad=$(render $((full_cells-10+3)))
-[[ $(rows "$bad") -eq 2 ]] || { printf 'invalid ladder did not fall back to defaults\n' >&2; exit 1; }
+# Invalid ladder entry rejects the config; defaults resume (single row, default ladder keeps Fable at 90).
+printf '{"fit":{"ladder":["bogus"],"rows":2}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
+bad=$(render 90)
+[[ $(rows "$bad") -eq 1 && "$bad" == *"Fable"* ]] || { printf 'invalid ladder did not fall back to defaults: %s\n' "$bad" >&2; exit 1; }
 printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
 
 bash "$ROOT/scripts/statusline-command.sh" --help | grep -q '^Usage:'
