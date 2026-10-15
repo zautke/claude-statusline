@@ -106,6 +106,10 @@ assert_fit ladder60 "$lad60" 57
 # Ladder order: the Fable segment leaves before 7d and 5h do, so if 7d or 5h is gone Fable must be gone too.
 if [[ "$lad60" != *"30%"* || "$lad60" != *"20%"* ]]; then [[ "$lad60" != *"n/a"* ]] || { printf 'ladder order violated at 60: %s\n' "$lad60" >&2; exit 1; }; fi
 printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
+# A bar configured below the floor must not block shrinking of the others.
+printf '{"widths":{"fable":3},"fit":{"rows":1}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
+small=$(render $((full_cells-9-20+3)))
+[[ "$small" == *"ctx ["* ]] || { printf 'sub-floor bar blocked shrinking: %s\n' "$small" >&2; exit 1; }
 # Wide glyphs: a CJK label counts two cells each, so the fitted row stays within budget by display width.
 printf '{"labels":{"five_hour":"五時間"},"fit":{"rows":1}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
 wide=$(render 120)

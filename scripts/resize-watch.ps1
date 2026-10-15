@@ -48,7 +48,7 @@ function Get-Digest([string]$path) { return (Get-FileHash -LiteralPath $path -Al
 function Set-Nonce([int]$cols) {
     if (-not (Test-Path -LiteralPath $Settings)) { return }
     try {
-        if (-not (Test-Path -LiteralPath "$Settings.bsl-backup")) { Copy-Item -LiteralPath $Settings -Destination "$Settings.bsl-backup" }
+        if (-not (Test-Path -LiteralPath "$Settings.bsl-backup")) { Copy-Item -LiteralPath $Settings -Destination "$Settings.bsl-backup"; Get-Acl -LiteralPath $Settings | Set-Acl -LiteralPath "$Settings.bsl-backup" }
         $before = Get-Digest $Settings
         $cfg = Get-Content -LiteralPath $Settings -Raw | ConvertFrom-Json
         $cmd = [string]$cfg.statusLine.command
