@@ -24,7 +24,8 @@ default_segments='["model","profile","cwd","context","disk","tmp","five_hour","s
 valid_config() {
   [[ -r "$config_file" ]] || return 1
   jq -e '
-    def known: ["model","profile","cwd","context","disk","tmp","five_hour","seven_day","fable"];
+    # "drift" is accepted for configs written before the segment was retired; the renderer skips it.
+    def known: ["model","profile","cwd","context","disk","tmp","five_hour","seven_day","fable","drift"];
     (.segments // known) as $s |
     ($s|type)=="array" and ($s|all(type=="string" and IN(known[]))) and (($s|unique|length)==($s|length)) and
     ((.labels//{})|to_entries|all(.value|type=="string")) and

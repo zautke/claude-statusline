@@ -132,6 +132,10 @@ assert_fit reserve "$res" $((full_cells-10))
 printf '{"fit":{"rows":1,"ladder":["ctx_label"]}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
 cl=$(render 90)
 [[ "$cl" != *"ctx"* && "$cl" == *"(25%)"* && "$cl" == *"Fable"* ]] || { printf 'custom ladder not honoured: %s\n' "$cl" >&2; exit 1; }
+# Legacy config naming the retired drift segment stays valid; drift is skipped, custom labels still apply.
+printf '{"segments":["model","five_hour","drift"],"labels":{"five_hour":"legacy"}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
+legacy=$(render 400)
+[[ "$legacy" == *"legacy ["* && "$legacy" != *"drift"* ]] || { printf 'legacy drift config rejected or rendered: %s\n' "$legacy" >&2; exit 1; }
 # A boolean in a numeric fit field rejects the whole config (jq // would otherwise treat false as absent).
 printf '{"labels":{"five_hour":"custom"},"fit":{"rows":false}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
 boolcfg=$(render 400)
