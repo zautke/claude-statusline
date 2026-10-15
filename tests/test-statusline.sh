@@ -36,7 +36,7 @@ cat >"$XDG_CACHE_HOME/braisenly-statusline/fable.json" <<'JSON'
 JSON
 
 payload='{"model":{"display_name":"Claude"},"context_window":{"used_percentage":25,"total_input_tokens":1000,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":20},"seven_day":{"used_percentage":30}}}'
-plain=$(printf '%s' "$payload" | NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 bash "$ROOT/scripts/statusline-command.sh")
+plain=$(printf '%s' "$payload" | NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh")
 
 [[ "$plain" == *"five ["* ]] || { printf 'missing custom five-hour label\n' >&2; exit 1; }
 [[ "$plain" == *"story ["* ]] || { printf 'missing Fable segment\n' >&2; exit 1; }
@@ -52,7 +52,7 @@ week=${plain#*week [}; week=${week%%]*}
 [[ "$plain" == *"five"*"story"*"week"* ]] || { printf 'segment order mismatch\n' >&2; exit 1; }
 
 printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
-fallback=$(printf '%s' "$payload" | NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 bash "$ROOT/scripts/statusline-command.sh")
+fallback=$(printf '%s' "$payload" | NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh")
 [[ "$fallback" == *"Claude"*"ctx"*"5h"*"7d"*"Fable"* ]] || {
   printf 'invalid config did not fall back to defaults\n' >&2
   exit 1
@@ -61,7 +61,7 @@ fallback=$(printf '%s' "$payload" | NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFR
 
 # Terminal fit: budget is COLUMNS-3. Helpers count display cells per row.
 cells() { sed $'s/\x1b\\[[0-9;]*m//g' <<<"$1" | jq -Rr length; }
-render() { printf '%s' "$payload" | COLUMNS=$1 NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 bash "$ROOT/scripts/statusline-command.sh"; }
+render() { printf '%s' "$payload" | COLUMNS=$1 NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh"; }
 rows() { printf '%s\n' "$1" | wc -l | tr -d ' '; }
 row() { sed -n "${2}p" <<<"$1"; }
 assert_fit() { # $1=label $2=output $3=budget: every row <= budget, stacked rows equal length
@@ -146,7 +146,7 @@ bad=$(render 90)
 [[ $(rows "$bad") -eq 1 && "$bad" == *"Fable"* ]] || { printf 'invalid ladder did not fall back to defaults: %s\n' "$bad" >&2; exit 1; }
 printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
 
-bash "$ROOT/scripts/statusline-command.sh" --help | grep -q '^Usage:'
+${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh" --help | grep -q '^Usage:'
 
 mkdir -p "$TMP/bin"
 cat >"$TMP/bin/curl" <<'SH'
@@ -158,22 +158,22 @@ export PATH="$TMP/bin:$PATH"
 export CLAUDE_CODE_OAUTH_TOKEN='secret-test-token'
 rm -f "$XDG_CACHE_HOME/braisenly-statusline/fable.json" "$XDG_CACHE_HOME/braisenly-statusline/next_refresh"
 export FAKE_USAGE_RESPONSE='{"limits":[{"kind":"weekly_scoped","scope":{"model":{"display_name":"Fable"}},"used_percentage":67,"resets_at":"soon"}]}'
-bash "$ROOT/scripts/statusline-command.sh" --refresh-fable
+${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh" --refresh-fable
 jq -e '.used_percentage==67 and .resets_at=="soon" and (.accessToken|not)' "$XDG_CACHE_HOME/braisenly-statusline/fable.json" >/dev/null
 
 rm -f "$XDG_CACHE_HOME/braisenly-statusline/fable.json" "$XDG_CACHE_HOME/braisenly-statusline/next_refresh"
 export FAKE_USAGE_RESPONSE='{"limits":[{"kind":"weekly_scoped","scope":{"model":{"display_name":"Fable 5"}},"percent":73,"resets_at":"later-percent"}]}'
-bash "$ROOT/scripts/statusline-command.sh" --refresh-fable
+${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh" --refresh-fable
 jq -e '.used_percentage==73 and .resets_at=="later-percent"' "$XDG_CACHE_HOME/braisenly-statusline/fable.json" >/dev/null
 
 rm -f "$XDG_CACHE_HOME/braisenly-statusline/fable.json" "$XDG_CACHE_HOME/braisenly-statusline/next_refresh"
 export FAKE_USAGE_RESPONSE='{"fable":{"used_percentage":55,"resets_at":"later"}}'
-bash "$ROOT/scripts/statusline-command.sh" --refresh-fable
+${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh" --refresh-fable
 jq -e '.used_percentage==55 and .resets_at=="later"' "$XDG_CACHE_HOME/braisenly-statusline/fable.json" >/dev/null
 
 jq '.fetched_at=1' "$XDG_CACHE_HOME/braisenly-statusline/fable.json" >"$TMP/stale.json"
 mv "$TMP/stale.json" "$XDG_CACHE_HOME/braisenly-statusline/fable.json"
-stale=$(printf '%s' "$payload" | NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 bash "$ROOT/scripts/statusline-command.sh")
+stale=$(printf '%s' "$payload" | NO_COLOR=1 BRAISENLY_STATUSLINE_DISABLE_REFRESH=1 ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh")
 [[ "$stale" == *"Fable ["*"(n/a)"* ]] || { printf 'missing unavailable Fable bar\n' >&2; exit 1; }
 
 printf 'ok\n'
