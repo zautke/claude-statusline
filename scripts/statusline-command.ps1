@@ -47,7 +47,11 @@ if (Test-Path -LiteralPath $configPath) {
         $cfg = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
         # All-or-nothing, as in the Bash renderer: any invalid fit field rejects the whole file.
         $knownLadder = @('disk_label','ctx_int','no_parens','disk_int','ctx_no_total','no_free','fable_short','disk_value','ctx_no_used','fable_label','fable_segment','seven_label','five_label','ctx_label','seven_segment','five_segment')
+        function Test-Int($v) { return ($v -is [int] -or $v -is [long]) }
         if ($null -ne $cfg.fit) {
+            if ($null -ne $cfg.fit.rows -and -not (Test-Int $cfg.fit.rows)) { throw 'invalid fit.rows' }
+            if ($null -ne $cfg.fit.reserve -and -not (Test-Int $cfg.fit.reserve)) { throw 'invalid fit.reserve' }
+            if ($null -ne $cfg.fit.min_bar_cells -and -not (Test-Int $cfg.fit.min_bar_cells)) { throw 'invalid fit.min_bar_cells' }
             if ($null -ne $cfg.fit.ladder -and (-not ($cfg.fit.ladder -is [array]) -or @($cfg.fit.ladder | Where-Object { $_ -notin $knownLadder }).Count -gt 0)) { throw 'invalid fit.ladder' }
             if ($null -ne $cfg.fit.rows -and $cfg.fit.rows -notin 1, 2) { throw 'invalid fit.rows' }
             if ($null -ne $cfg.fit.reserve -and ($cfg.fit.reserve -lt 0 -or $cfg.fit.reserve -gt 200)) { throw 'invalid fit.reserve' }
@@ -146,7 +150,7 @@ if (-not $env:BRAISENLY_STATUSLINE_DISABLE_REFRESH) {
 
 # One resize watcher per Claude Code process: walk up the parent chain to claude, lock on its pid.
 # Opt-in: the watcher rewrites settings.json on resize, so it is off unless fit.resize_watch is true.
-if ($resizeWatch -and -not $env:BRAISENLY_STATUSLINE_DISABLE_REFRESH -and -not $env:BRAISENLY_STATUSLINE_DISABLE_WATCH) {
+if ($resizeWatch -and -not $env:BRAISENLY_STATUSLINE_DISABLE_WATCH) {
     try {
         $proc = Get-Process -Id $PID
         for ($i = 0; $i -lt 6 -and $proc; $i++) {

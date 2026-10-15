@@ -115,7 +115,7 @@ start_resize_watch() {
   printf '%s' $! >"$lock"
 }
 # Opt-in: the watcher rewrites settings.json on resize, so it is off unless fit.resize_watch is true.
-[[ -n ${BRAISENLY_STATUSLINE_DISABLE_REFRESH:-}${BRAISENLY_STATUSLINE_DISABLE_WATCH:-} ]] || [[ $(get_cfg '.fit.resize_watch' 'false') != true ]] || start_resize_watch
+[[ -n ${BRAISENLY_STATUSLINE_DISABLE_WATCH:-} ]] || [[ $(get_cfg '.fit.resize_watch' 'false') != true ]] || start_resize_watch
 
 input=$(cat)
 # Timing trace, enabled by touching $cache_dir/trace: when each render started and what width it saw.

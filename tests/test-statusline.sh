@@ -18,6 +18,7 @@ export HOME="$TMP/home"
 export CLAUDE_CONFIG_DIR="$TMP/config"
 export XDG_CACHE_HOME="$TMP/cache"
 export BRAISENLY_STATUSLINE_NO_LIVE_COLS=1
+export BRAISENLY_STATUSLINE_DISABLE_WATCH=1
 mkdir -p "$HOME/work" "$CLAUDE_CONFIG_DIR" "$XDG_CACHE_HOME/braisenly-statusline"
 # The cwd segment renders $PWD; pin it so ladder stages land on the same widths on every machine.
 cd "$HOME/work"
@@ -69,7 +70,9 @@ assert_fit() { # $1=label $2=output $3=budget: every row <= budget, stacked rows
 }
 # Wide terminal: flat, untouched, unpadded.
 wide=$(render 400)
-[[ "$wide" == "$fallback" ]] || { printf 'wide terminal changed the render\n' >&2; exit 1; }
+# Mask the live disk value: free space can change between two renders.
+mask() { sed -E 's/[0-9.]+[KMG] free/N free/' <<<"$1"; }
+[[ "$(mask "$wide")" == "$(mask "$fallback")" ]] || { printf 'wide terminal changed the render\n' >&2; exit 1; }
 full_cells=$(cells "$fallback")
 # Stacked (opt-in rows:2): a width that fits two rows at full bars but not one row. Separators align, bars untouched.
 printf '{"fit":{"rows":2}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
