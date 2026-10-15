@@ -6,8 +6,10 @@
 # never ReadConsoleInput, which would steal keystrokes from the shared input queue.
 #
 # Safety: writes only after the width has settled, only through validated temp file +
-# atomic rename, only when the file has not changed since it was read (compare-and-swap),
-# and only after keeping a one-time backup beside the settings file.
+# atomic rename, only when the file still matches what was read at the last instant before
+# the rename, and only after keeping a one-time backup beside the settings file.
+# ponytail: the check-then-rename window is not zero; Claude Code takes no lock we could share,
+# so a settings write landing inside that window is lost. A true CAS needs cooperation upstream.
 # UNTESTED on a live desktop session: AttachConsole needs the same interactive session as Claude Code.
 
 param(
@@ -62,7 +64,7 @@ function Set-Nonce([int]$cols) {
         $check = Get-Content -LiteralPath $tmp -Raw | ConvertFrom-Json
         $keysAfter = ($check.PSObject.Properties.Name | Sort-Object) -join ','
         if ($keysBefore -ne $keysAfter) { Remove-Item -LiteralPath $tmp -Force; return }
-        # Compare-and-swap: Claude Code also writes this file; if it changed since we read it, drop this bump.
+        # Last-instant check: Claude Code also writes this file; if it changed since we read it, drop this bump.
         if ((Get-Digest $Settings) -ne $before) { Remove-Item -LiteralPath $tmp -Force; return }
         Move-Item -LiteralPath $tmp -Destination $Settings -Force
     } catch { }

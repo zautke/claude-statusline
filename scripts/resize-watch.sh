@@ -5,8 +5,10 @@
 # Claude Code does not re-run the status line on SIGWINCH (anthropics/claude-code#76988).
 #
 # Safety: writes only after the width has settled, only through validated temp file +
-# atomic rename, only when the file has not changed since it was read (compare-and-swap),
-# and only after keeping a one-time backup beside the settings file.
+# atomic rename, only when the file still matches what was read at the last instant before
+# the rename, and only after keeping a one-time backup beside the settings file.
+# ponytail: the check-then-rename window is a few microseconds but not zero; Claude Code takes no lock we
+# could share, so a settings write landing inside that window is lost. A true CAS needs cooperation upstream.
 set -u
 
 Usage() {
@@ -55,7 +57,7 @@ bump() {
   # Validate: parses, and no top-level key was lost.
   keys_before=$(jq -c 'keys' "$settings" 2>/dev/null); keys_after=$(jq -c 'keys' "$tmp" 2>/dev/null)
   [[ -n $keys_after && $keys_before == "$keys_after" ]] || { rm -f "$tmp"; return 0; }
-  # Compare-and-swap: Claude Code also writes this file; if it changed since we read it, drop this bump.
+  # Last-instant check: Claude Code also writes this file; if it changed since we read it, drop this bump.
   after=$(digest "$settings")
   [[ $before == "$after" ]] || { rm -f "$tmp"; return 0; }
   mv "$tmp" "$settings" || rm -f "$tmp"
