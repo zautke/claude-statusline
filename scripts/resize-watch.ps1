@@ -57,7 +57,7 @@ function Set-Nonce([int]$cols) {
         $cmd = [string]$cfg.statusLine.command
         # Only a Braisenly-owned statusLine command gets a nonce; if the user switched or removed it, this watcher is done.
         $bare = $cmd -replace ' # bsl-cols=\d+$', ''
-        if ($bare -notmatch 'braisenly-statusline/scripts/statusline-(dispatcher|command)\.(sh|ps1)' -and $bare -ne 'bash ~/.claude/statusline-dispatcher.sh') { exit 0 }
+        if ($bare -notmatch 'braisenly-statusline[\\/]scripts[\\/]statusline-(dispatcher|command)\.(sh|ps1)' -and $bare -ne 'bash ~/.claude/statusline-dispatcher.sh') { exit 0 }
         $keysBefore = ($cfg.PSObject.Properties.Name | Sort-Object) -join ','
         $cfg.statusLine.command = ($cmd -replace ' # bsl-cols=\d+$', '') + " # bsl-cols=$cols"
         $tmp = "$Settings.tmp.$PID"
