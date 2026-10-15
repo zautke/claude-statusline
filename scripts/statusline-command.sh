@@ -137,8 +137,8 @@ sep="$sep_color ● $reset"
 fmt_bytes() { local b=$1 d=${2:-1}; if ((b>=1073741824)); then awk -v b="$b" -v d="$d" 'BEGIN{printf "%.*fG",d,b/1073741824}'; elif ((b>=1048576)); then awk -v b="$b" -v d="$d" 'BEGIN{printf "%.*fM",d,b/1048576}'; elif ((b>=1024)); then awk -v b="$b" -v d="$d" 'BEGIN{printf "%.*fK",d,b/1024}'; else printf '%dB' "$b"; fi; }
 # Gradient colour of a bar cell at position pos (0..100): green, through amber, to red. Sets r g b; no subshell.
 heat_rgb() { local pos=$1 p2; if ((pos<=50)); then r=$((40+180*pos/50)) g=$((170-10*pos/50)) b=$((60-60*pos/50)); else p2=$((pos-50)); r=$((220-40*p2/50)) g=$((160-160*p2/50)) b=0; fi; }
-# Threshold colours while a bar is shown; when bars are dropped the number carries the heat its bar tip would have had.
-pct_text() { local p=$1 r g b; if ((bars_off)); then heat_rgb "$p"; elif ((p<=usage_warn)); then r=$ok_r g=$ok_g b=$ok_b; elif ((p<=usage_critical)); then r=$warn_r g=$warn_g b=$warn_b; else r=$crit_r g=$crit_g b=$crit_b; fi; if [[ -n ${NO_COLOR:-} ]]; then PCT="$p%"; else printf -v PCT '\033[38;2;%d;%d;%dm%d%%%s' "$r" "$g" "$b" "$p" "$reset"; fi; }
+# The number always carries the heat colour of its bar tip, bar shown or not.
+pct_text() { local p=$1 r g b; heat_rgb "$p"; if [[ -n ${NO_COLOR:-} ]]; then PCT="$p%"; else printf -v PCT '\033[38;2;%d;%d;%dm%d%%%s' "$r" "$g" "$b" "$p" "$reset"; fi; }
 # Fit state: bars_off=1 drops every bar; scale_num/scale_den shrink configured widths uniformly.
 bars_off=0 scale_num=1 scale_den=1
 bar() { # sets BAR; empty when bars are off. No subshells: this runs inside the fit loop.

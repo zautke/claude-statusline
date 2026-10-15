@@ -189,10 +189,9 @@ function Get-PctColor([int]$p) {
     return "$ESC[38;2;180;60;40m"
 }
 
-# Threshold colours while a bar is shown; when bars are dropped the number carries the heat its bar tip would have had.
+# The number always carries the heat colour of its bar tip, bar shown or not.
 function Format-PctText([int]$p) {
-    $c = if ($script:barsOff) { Get-CellColor $p } else { Get-PctColor $p }
-    return "${c}${p}%${R}"
+    return "$(Get-CellColor $p)${p}%${R}"
 }
 
 function Format-Bytes([long]$b) {
