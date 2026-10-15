@@ -28,6 +28,10 @@ while (($#)); do
   shift
 done
 [[ $pid =~ ^[0-9]+$ ]] || { Usage >&2; exit 2; }
+# Write beside the real file: a dotfiles-managed settings.json is often a symlink, and a rename over the link
+# would replace the link itself. Follow links (readlink -f on GNU and macOS 12.3+, manual loop otherwise).
+resolve() { local t=$1 n=0 d; if readlink -f / >/dev/null 2>&1; then readlink -f "$t"; return; fi; while [[ -L $t && $n -lt 32 ]]; do d=$(dirname "$t"); t=$(readlink "$t"); [[ $t == /* ]] || t=$d/$t; n=$((n+1)); done; printf '%s' "$t"; }
+[[ -e $settings ]] && settings=$(resolve "$settings")
 
 tty=$(ps -o tty= -p "$pid" 2>/dev/null | tr -d ' ')
 [[ -n $tty && $tty != '?' && $tty != '??' ]] || exit 0

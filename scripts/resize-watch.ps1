@@ -30,6 +30,9 @@ if (-not $Settings) {
     $Settings = Join-Path $configDir 'settings.json'
 }
 
+# Write beside the real file: a dotfiles-managed settings.json may be a symlink; a move over the link would replace it.
+try { $item = Get-Item -LiteralPath $Settings -ErrorAction Stop; if ($item.LinkType) { $target = $item.ResolveLinkTarget($true); if ($target) { $Settings = $target.FullName } } } catch { }
+
 Add-Type -Namespace Bsl -Name Con -MemberDefinition @'
 [DllImport("kernel32.dll", SetLastError = true)] public static extern bool FreeConsole();
 [DllImport("kernel32.dll", SetLastError = true)] public static extern bool AttachConsole(uint pid);
