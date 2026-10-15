@@ -52,6 +52,7 @@ bump() {
   before=$(digest "$settings")
   # Create the temp file private, then copy the original mode so the rename never loosens permissions.
   (umask 077; : >"$tmp") || return 0
+  grp=$(stat -c %g "$settings" 2>/dev/null || stat -f %g "$settings" 2>/dev/null); [[ -n $grp ]] && chgrp "$grp" "$tmp" 2>/dev/null
   mode=$(stat -c %a "$settings" 2>/dev/null || stat -f %OLp "$settings" 2>/dev/null); [[ -n $mode ]] && chmod "$mode" "$tmp"
   # Strip any previous nonce, then append the new one. Leave every other key untouched.
   jq --arg n " # bsl-cols=$1" '
