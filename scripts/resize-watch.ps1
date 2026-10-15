@@ -54,7 +54,7 @@ function Set-Nonce([int]$cols) {
         $keysBefore = ($cfg.PSObject.Properties.Name | Sort-Object) -join ','
         $cfg.statusLine.command = ($cmd -replace ' # bsl-cols=\d+$', '') + " # bsl-cols=$cols"
         $tmp = "$Settings.tmp.$PID"
-        $cfg | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $tmp -Encoding utf8
+        $cfg | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $tmp -Encoding utf8
         # Carry the original ACL onto the temp file so the rename never loosens permissions.
         Get-Acl -LiteralPath $Settings | Set-Acl -LiteralPath $tmp
         # Validate: parses, and no top-level key was lost.

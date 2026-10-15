@@ -45,6 +45,15 @@ $configPath = Join-Path $configDir 'statusline.json'
 if (Test-Path -LiteralPath $configPath) {
     try {
         $cfg = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+        # All-or-nothing, as in the Bash renderer: any invalid fit field rejects the whole file.
+        $knownLadder = @('disk_label','ctx_int','no_parens','disk_int','ctx_no_total','no_free','fable_short','disk_value','ctx_no_used','fable_label','fable_segment','seven_label','five_label','ctx_label','seven_segment','five_segment')
+        if ($null -ne $cfg.fit) {
+            if ($null -ne $cfg.fit.ladder -and (-not ($cfg.fit.ladder -is [array]) -or @($cfg.fit.ladder | Where-Object { $_ -notin $knownLadder }).Count -gt 0)) { throw 'invalid fit.ladder' }
+            if ($null -ne $cfg.fit.rows -and $cfg.fit.rows -notin 1, 2) { throw 'invalid fit.rows' }
+            if ($null -ne $cfg.fit.reserve -and ($cfg.fit.reserve -lt 0 -or $cfg.fit.reserve -gt 200)) { throw 'invalid fit.reserve' }
+            if ($null -ne $cfg.fit.min_bar_cells -and ($cfg.fit.min_bar_cells -lt 1 -or $cfg.fit.min_bar_cells -gt 128)) { throw 'invalid fit.min_bar_cells' }
+            if ($null -ne $cfg.fit.resize_watch -and $cfg.fit.resize_watch -isnot [bool]) { throw 'invalid fit.resize_watch' }
+        }
         if ($cfg.fable.model) { $fableModel = [string]$cfg.fable.model; $fableLabel = $fableModel }
         if ($cfg.widths.fable) { $fableWidth = [int]$cfg.widths.fable }
         if ($null -ne $cfg.fit.reserve) { $fitReserve = [int]$cfg.fit.reserve }
@@ -52,7 +61,7 @@ if (Test-Path -LiteralPath $configPath) {
         if ($cfg.fit.resize_watch -eq $true) { $resizeWatch = $true }
         if ($cfg.fable.refresh_seconds) { $fableRefreshSeconds = [int64]$cfg.fable.refresh_seconds }
         if ($cfg.fable.max_stale_seconds) { $fableMaxStale = [int64]$cfg.fable.max_stale_seconds }
-    } catch { }
+    } catch { $cfg = $null; $fableModel = 'Fable'; $fableLabel = 'Fable'; $fableWidth = 12; $fitReserve = 0; $minBarCells = 5; $resizeWatch = $false; $fableRefreshSeconds = 600; $fableMaxStale = 86400 }
 }
 $fableCache = Join-Path $cacheRoot 'braisenly-statusline/fable.json'
 
@@ -300,7 +309,7 @@ $sevenPct = if ($null -ne $rl7d) { [int][math]::Round($rl7d) } else { $null }
 $defaultLadder = @('disk_label','ctx_int','no_parens','disk_int','ctx_no_total','no_free','fable_short','disk_value','ctx_no_used','fable_label','fable_segment','seven_label','five_label','ctx_label','seven_segment','five_segment')
 $ladder = $defaultLadder; $fitRows = 1
 if ($cfg) {
-    if ($cfg.fit.ladder -is [array] -and @($cfg.fit.ladder | Where-Object { $_ -notin $defaultLadder }).Count -eq 0) { $ladder = @($cfg.fit.ladder) }
+    if ($cfg.fit.ladder -is [array]) { $ladder = @($cfg.fit.ladder) }
     if ($cfg.fit.rows -in 1, 2) { $fitRows = [int]$cfg.fit.rows }
 }
 $script:F = @{}
