@@ -28,7 +28,8 @@ settings=$config_dir/settings.json
 mkdir -p "$config_dir"
 
 if [[ -r $settings ]]; then
-  current=$(jq -r '.statusLine.command//empty' "$settings")
+  # Strip the resize watcher's nonce before the ownership check.
+  current=$(jq -r '(.statusLine.command//empty)|sub(" # bsl-cols=[0-9]+$"; "")' "$settings")
   if [[ -n $current && $current != *braisenly-statusline* && $current != 'bash ~/.claude/statusline-dispatcher.sh' && $force -eq 0 ]]; then
     printf 'Refusing to replace unrelated statusLine command: %s\n' "$current" >&2
     exit 1

@@ -21,7 +21,8 @@ New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
 $settings = if (Test-Path -LiteralPath $settingsPath) {
     Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json -AsHashtable
 } else { [ordered]@{} }
-$current = $settings.statusLine.command
+# Strip the resize watcher's nonce before the ownership check.
+$current = ([string]$settings.statusLine.command) -replace ' # bsl-cols=\d+$', ''
 if ($current -and $current -notmatch 'braisenly-statusline' -and $current -ne 'bash ~/.claude/statusline-dispatcher.sh' -and -not $Force) {
     [Console]::Error.WriteLine("Refusing to replace unrelated statusLine command: $current")
     exit 1
