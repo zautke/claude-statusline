@@ -256,7 +256,7 @@ function Get-FitBar([int]$pct, [int]$width) {
 function Test-Wide([int]$cp) {
     return (($cp -ge 0x1100 -and $cp -le 0x115F) -or ($cp -ge 0x2E80 -and $cp -le 0xA4CF -and $cp -ne 0x303F) -or ($cp -ge 0xAC00 -and $cp -le 0xD7A3) -or
             ($cp -ge 0xF900 -and $cp -le 0xFAFF) -or ($cp -ge 0xFE30 -and $cp -le 0xFE4F) -or ($cp -ge 0xFF00 -and $cp -le 0xFF60) -or ($cp -ge 0xFFE0 -and $cp -le 0xFFE6) -or
-            ($cp -ge 0x1F300 -and $cp -le 0x1F64F) -or ($cp -ge 0x1F900 -and $cp -le 0x1F9FF) -or ($cp -ge 0x20000 -and $cp -le 0x3FFFD))
+            ($cp -ge 0x1F300 -and $cp -le 0x1FAFF) -or ($cp -ge 0x20000 -and $cp -le 0x3FFFD))
 }
 function Get-Cells([string]$s) {
     $plain = $s -replace "$ESC\[[0-9;]*m", ''

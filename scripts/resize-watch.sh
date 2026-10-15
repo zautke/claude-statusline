@@ -42,7 +42,7 @@ cols() { [[ -r $dev ]] || return 0; stty size <"$dev" 2>/dev/null | awk '{print 
 digest() { cksum <"$1" 2>/dev/null; }
 
 # Only a Braisenly-owned statusLine command gets a nonce; if the user switched or removed it, this watcher is done.
-owned() { jq -e '(.statusLine.command? // "") | test("statusline-(dispatcher|command)\\.(sh|ps1)")' "$settings" >/dev/null 2>&1; }
+owned() { jq -e '(.statusLine.command? // "") | sub(" # bsl-cols=[0-9]+$"; "") | test("braisenly-statusline/scripts/statusline-(dispatcher|command)\\.(sh|ps1)") or . == "bash ~/.claude/statusline-dispatcher.sh"' "$settings" >/dev/null 2>&1; }
 bump() {
   local tmp before after keys_before keys_after
   [[ -r $settings ]] || return 0

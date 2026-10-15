@@ -169,7 +169,7 @@ cells() {
   x=${s//[ -~█░●…⠀]/}; [[ -n $x ]]||return 0
   for ((i=0;i<${#x};i++)); do
     ch=${x:i:1}; printf -v cp '%d' "'$ch"
-    if ((cp>=0x1100&&cp<=0x115F)) || ((cp>=0x2E80&&cp<=0xA4CF&&cp!=0x303F)) || ((cp>=0xAC00&&cp<=0xD7A3)) || ((cp>=0xF900&&cp<=0xFAFF)) || ((cp>=0xFE30&&cp<=0xFE4F)) || ((cp>=0xFF00&&cp<=0xFF60)) || ((cp>=0xFFE0&&cp<=0xFFE6)) || ((cp>=0x1F300&&cp<=0x1F64F)) || ((cp>=0x1F900&&cp<=0x1F9FF)) || ((cp>=0x20000&&cp<=0x3FFFD)); then N=$((N+1)); fi
+    if ((cp>=0x1100&&cp<=0x115F)) || ((cp>=0x2E80&&cp<=0xA4CF&&cp!=0x303F)) || ((cp>=0xAC00&&cp<=0xD7A3)) || ((cp>=0xF900&&cp<=0xFAFF)) || ((cp>=0xFE30&&cp<=0xFE4F)) || ((cp>=0xFF00&&cp<=0xFF60)) || ((cp>=0xFFE0&&cp<=0xFFE6)) || ((cp>=0x1F300&&cp<=0x1FAFF)) || ((cp>=0x20000&&cp<=0x3FFFD)); then N=$((N+1)); fi
   done
 }
 
