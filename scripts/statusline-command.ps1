@@ -163,10 +163,17 @@ if ($resizeWatch -and -not $env:BRAISENLY_STATUSLINE_DISABLE_WATCH) {
             $watchDir = Join-Path $cacheRoot 'braisenly-statusline'
             New-Item -ItemType Directory -Force -Path $watchDir | Out-Null
             $lock = Join-Path $watchDir "resize-watch.$($proc.Id).pid"
-            $alive = (Test-Path -LiteralPath $lock) -and (Get-Process -Id ([int](Get-Content -LiteralPath $lock -Raw)) -ErrorAction SilentlyContinue)
-            if (-not $alive) {
-                $watcher = Start-Process -FilePath 'pwsh' -ArgumentList "-NoProfile -NonInteractive -File `"$(Join-Path $PSScriptRoot 'resize-watch.ps1')`" -ClaudePid $($proc.Id) -Settings `"$(Join-Path $configDir 'settings.json')`"" -WindowStyle Hidden -PassThru
-                Set-Content -LiteralPath $lock -Value $watcher.Id -NoNewline
+            # Two overlapping renders must not both spawn: the directory create is the atomic mutex around check-and-spawn.
+            $mutex = $null
+            try { $mutex = New-Item -ItemType Directory -Path "$lock.spawn" -ErrorAction Stop } catch { }
+            if ($mutex) {
+                try {
+                    $alive = (Test-Path -LiteralPath $lock) -and (Get-Process -Id ([int](Get-Content -LiteralPath $lock -Raw)) -ErrorAction SilentlyContinue)
+                    if (-not $alive) {
+                        $watcher = Start-Process -FilePath 'pwsh' -ArgumentList "-NoProfile -NonInteractive -File `"$(Join-Path $PSScriptRoot 'resize-watch.ps1')`" -ClaudePid $($proc.Id) -Settings `"$(Join-Path $configDir 'settings.json')`"" -WindowStyle Hidden -PassThru
+                        Set-Content -LiteralPath $lock -Value $watcher.Id -NoNewline
+                    }
+                } finally { Remove-Item -LiteralPath "$lock.spawn" -Force -ErrorAction SilentlyContinue }
             }
         }
     } catch { }

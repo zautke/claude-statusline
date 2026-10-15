@@ -111,8 +111,13 @@ start_resize_watch() {
   mkdir -p "$cache_dir" 2>/dev/null || return 0
   lock=$cache_dir/resize-watch.$pid.pid
   [[ -r $lock ]] && kill -0 "$(cat "$lock" 2>/dev/null)" 2>/dev/null && return 0
-  nohup bash "${BASH_SOURCE[0]%/*}/resize-watch.sh" --pid "$pid" --settings "$config_dir/settings.json" --interval 0.1 --settle 0.2 >/dev/null 2>&1 &
-  printf '%s' $! >"$lock"
+  # Two overlapping renders must not both spawn: mkdir is the atomic mutex around check-and-spawn.
+  mkdir "$lock.spawn" 2>/dev/null || return 0
+  if ! { [[ -r $lock ]] && kill -0 "$(cat "$lock" 2>/dev/null)" 2>/dev/null; }; then
+    nohup bash "${BASH_SOURCE[0]%/*}/resize-watch.sh" --pid "$pid" --settings "$config_dir/settings.json" --interval 0.1 --settle 0.2 >/dev/null 2>&1 &
+    printf '%s' $! >"$lock"
+  fi
+  rmdir "$lock.spawn" 2>/dev/null
 }
 # Opt-in: the watcher rewrites settings.json on resize, so it is off unless fit.resize_watch is true.
 [[ -n ${BRAISENLY_STATUSLINE_DISABLE_WATCH:-} ]] || [[ $(get_cfg '.fit.resize_watch' 'false') != true ]] || start_resize_watch
