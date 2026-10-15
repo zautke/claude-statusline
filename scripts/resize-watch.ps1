@@ -50,7 +50,8 @@ function Set-Nonce([int]$cols) {
         $before = Get-Digest $Settings
         $cfg = Get-Content -LiteralPath $Settings -Raw | ConvertFrom-Json
         $cmd = [string]$cfg.statusLine.command
-        if (-not $cmd) { return }
+        # Only a Braisenly-owned statusLine command gets a nonce; if the user switched or removed it, this watcher is done.
+        if ($cmd -notmatch 'statusline-(dispatcher|command)\.(sh|ps1)') { exit 0 }
         $keysBefore = ($cfg.PSObject.Properties.Name | Sort-Object) -join ','
         $cfg.statusLine.command = ($cmd -replace ' # bsl-cols=\d+$', '') + " # bsl-cols=$cols"
         $tmp = "$Settings.tmp.$PID"

@@ -35,9 +35,12 @@ dev=/dev/$tty
 cols() { [[ -r $dev ]] || return 0; stty size <"$dev" 2>/dev/null | awk '{print $2}'; }
 digest() { cksum <"$1" 2>/dev/null; }
 
+# Only a Braisenly-owned statusLine command gets a nonce; if the user switched or removed it, this watcher is done.
+owned() { jq -e '(.statusLine.command? // "") | test("statusline-(dispatcher|command)\\.(sh|ps1)")' "$settings" >/dev/null 2>&1; }
 bump() {
   local tmp before after keys_before keys_after
   [[ -r $settings ]] || return 0
+  owned || exit 0
   [[ -e $settings.bsl-backup ]] || cp -p "$settings" "$settings.bsl-backup" 2>/dev/null
   tmp=$settings.tmp.$$
   before=$(digest "$settings")
