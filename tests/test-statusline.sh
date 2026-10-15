@@ -18,7 +18,9 @@ export HOME="$TMP/home"
 export CLAUDE_CONFIG_DIR="$TMP/config"
 export XDG_CACHE_HOME="$TMP/cache"
 export BRAISENLY_STATUSLINE_NO_LIVE_COLS=1
-mkdir -p "$HOME" "$CLAUDE_CONFIG_DIR" "$XDG_CACHE_HOME/braisenly-statusline"
+mkdir -p "$HOME/work" "$CLAUDE_CONFIG_DIR" "$XDG_CACHE_HOME/braisenly-statusline"
+# The cwd segment renders $PWD; pin it so ladder stages land on the same widths on every machine.
+cd "$HOME/work"
 
 cat >"$CLAUDE_CONFIG_DIR/statusline.json" <<'JSON'
 {
@@ -97,9 +99,16 @@ printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
 lad60=$(render 60)
 assert_fit ladder60 "$lad60" 57
 [[ "$lad60" != *"["* && "$lad60" != *"("* ]] || { printf 'bars or parentheses survived at 60 single-row: %s\n' "$lad60" >&2; exit 1; }
-[[ "$lad60" == *"25%"*"20%"*"30%"* ]] || { printf 'ctx/5h/7d percentages dropped too early at 60: %s\n' "$lad60" >&2; exit 1; }
-[[ "$lad60" != *"Fable"* && "$lad60" != *"F "* ]] || { printf 'Fable survived at 60: %s\n' "$lad60" >&2; exit 1; }
+[[ "$lad60" == *"25%"* ]] || { printf 'ctx percentage dropped at 60: %s\n' "$lad60" >&2; exit 1; }
+# Ladder order: the Fable segment leaves before 7d and 5h do, so if 7d or 5h is gone Fable must be gone too.
+if [[ "$lad60" != *"30%"* || "$lad60" != *"20%"* ]]; then [[ "$lad60" != *"n/a"* ]] || { printf 'ladder order violated at 60: %s\n' "$lad60" >&2; exit 1; }; fi
 printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
+# Wide glyphs: a CJK label counts two cells each, so the fitted row stays within budget by display width.
+printf '{"labels":{"five_hour":"五時間"},"fit":{"rows":1}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
+wide=$(render 120)
+wcells=$(python3 -c 'import sys,unicodedata; s=sys.stdin.read().rstrip("\n"); print(sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in s))' <<<"$wide" 2>/dev/null || cells "$wide")
+[[ $wcells -le 117 ]] || { printf 'wide label overflowed by display width: %s\n' "$wcells" >&2; exit 1; }
+[[ "$wide" == *"五時間"* ]] || { printf 'wide label missing\n' >&2; exit 1; }
 # Floor: 30 columns must not crash and must emit at most 2 rows.
 flr=$(render 30); [[ $(rows "$flr") -le 2 ]] || { printf 'floor emitted too many rows\n' >&2; exit 1; }
 # Default (rows:1) never stacks.

@@ -161,8 +161,18 @@ bar() { # sets BAR; empty when bars are off. No subshells: this runs inside the 
   done
   ((full<width))&&BAR+=$empty_color; for ((i=full;i<width;i++)); do BAR+='░'; done; BAR+="$reset]"
 }
-# Display cells of a string: strip SGR sequences, count characters (every glyph used is single-width). Pure bash.
-cells() { local s=$1 pre rest; while [[ $s == *$'\033['* ]]; do pre=${s%%$'\033['*}; rest=${s#*$'\033['}; s=$pre${rest#*m}; done; N=${#s}; }
+# Display cells of a string: strip SGR, count characters, then add one more cell for each East Asian Wide or emoji
+# code point (user labels, model names, and paths may carry them). Pure bash; the wide scan only runs on exotic text.
+cells() {
+  local s=$1 pre rest x i ch cp
+  while [[ $s == *$'\033['* ]]; do pre=${s%%$'\033['*}; rest=${s#*$'\033['}; s=$pre${rest#*m}; done
+  N=${#s}
+  x=${s//[ -~█░●…⠀]/}; [[ -n $x ]]||return 0
+  for ((i=0;i<${#x};i++)); do
+    ch=${x:i:1}; printf -v cp '%d' "'$ch"
+    if ((cp>=0x1100&&cp<=0x115F)) || ((cp>=0x2E80&&cp<=0xA4CF&&cp!=0x303F)) || ((cp>=0xAC00&&cp<=0xD7A3)) || ((cp>=0xF900&&cp<=0xFAFF)) || ((cp>=0xFE30&&cp<=0xFE4F)) || ((cp>=0xFF00&&cp<=0xFF60)) || ((cp>=0xFFE0&&cp<=0xFFE6)) || ((cp>=0x1F300&&cp<=0x1F64F)) || ((cp>=0x1F900&&cp<=0x1F9FF)) || ((cp>=0x20000&&cp<=0x3FFFD)); then N=$((N+1)); fi
+  done
+}
 
 model=$(jq -r '.model.display_name//"Claude"' <<<"$input"); used=$(jq -r '.context_window.used_percentage//"null"' <<<"$input"); total_in=$(jq -r '.context_window.total_input_tokens//0' <<<"$input"); ctx=$(jq -r '.context_window.context_window_size//0' <<<"$input"); five=$(jq -r '.rate_limits.five_hour.used_percentage//"null"' <<<"$input"); seven=$(jq -r '.rate_limits.seven_day.used_percentage//"null"' <<<"$input")
 fable=null

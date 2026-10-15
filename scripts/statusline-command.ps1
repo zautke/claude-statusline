@@ -151,7 +151,7 @@ if ($resizeWatch -and -not $env:BRAISENLY_STATUSLINE_DISABLE_REFRESH -and -not $
             $lock = Join-Path $watchDir "resize-watch.$($proc.Id).pid"
             $alive = (Test-Path -LiteralPath $lock) -and (Get-Process -Id ([int](Get-Content -LiteralPath $lock -Raw)) -ErrorAction SilentlyContinue)
             if (-not $alive) {
-                $watcher = Start-Process -FilePath 'pwsh' -ArgumentList "-NoProfile -NonInteractive -File `"$(Join-Path $PSScriptRoot 'resize-watch.ps1')`" -Pid $($proc.Id) -Settings `"$configPath`"" -WindowStyle Hidden -PassThru
+                $watcher = Start-Process -FilePath 'pwsh' -ArgumentList "-NoProfile -NonInteractive -File `"$(Join-Path $PSScriptRoot 'resize-watch.ps1')`" -ClaudePid $($proc.Id) -Settings `"$(Join-Path $configDir 'settings.json')`"" -WindowStyle Hidden -PassThru
                 Set-Content -LiteralPath $lock -Value $watcher.Id -NoNewline
             }
         }
@@ -235,7 +235,22 @@ function Get-FitBar([int]$pct, [int]$width) {
     return Get-Bar $pct ([math]::Max(1, [int][math]::Floor($width * $script:scaleNum / $script:scaleDen)))
 }
 # Display cells of a rendered row: strip SGR, count chars (all glyphs used are single-width BMP).
-function Get-Cells([string]$s) { return ($s -replace "$ESC\[[0-9;]*m", '').Length }
+# Wide (2-cell) code points: East Asian Wide/Fullwidth blocks and emoji presentation ranges; everything else is 1 cell.
+function Test-Wide([int]$cp) {
+    return (($cp -ge 0x1100 -and $cp -le 0x115F) -or ($cp -ge 0x2E80 -and $cp -le 0xA4CF -and $cp -ne 0x303F) -or ($cp -ge 0xAC00 -and $cp -le 0xD7A3) -or
+            ($cp -ge 0xF900 -and $cp -le 0xFAFF) -or ($cp -ge 0xFE30 -and $cp -le 0xFE4F) -or ($cp -ge 0xFF00 -and $cp -le 0xFF60) -or ($cp -ge 0xFFE0 -and $cp -le 0xFFE6) -or
+            ($cp -ge 0x1F300 -and $cp -le 0x1F64F) -or ($cp -ge 0x1F900 -and $cp -le 0x1F9FF) -or ($cp -ge 0x20000 -and $cp -le 0x3FFFD))
+}
+function Get-Cells([string]$s) {
+    $plain = $s -replace "$ESC\[[0-9;]*m", ''
+    $n = 0
+    for ($i = 0; $i -lt $plain.Length; $i++) {
+        $cp = [char]::ConvertToUtf32($plain, $i)
+        if ($cp -gt 0xFFFF) { $i++ }
+        $n += (Test-Wide $cp) ? 2 : 1
+    }
+    return $n
+}
 
 # Parse JSON — no jq needed
 $j       = $input_data | ConvertFrom-Json
@@ -374,6 +389,8 @@ function Pad-Rows {
 
 $columns = 0
 if ($env:COLUMNS -match '^\d+$') { $columns = [int]$env:COLUMNS }
+# Native Windows without COLUMNS: the attached console's visible width (0 when no console is attached).
+if ($columns -le 0) { try { $columns = [Console]::WindowWidth } catch { $columns = 0 } }
 if ($columns -le 0) { Build; Assemble-Flat; Emit }
 $budget = [math]::Max(1, $columns - 3 - $fitReserve)
 # Stage 1: full bars.

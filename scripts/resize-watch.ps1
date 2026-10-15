@@ -11,7 +11,7 @@
 # UNTESTED on a live desktop session: AttachConsole needs the same interactive session as Claude Code.
 
 param(
-    [Alias('p')][int]$Pid = 0,
+    [Alias('p')][int]$ClaudePid = 0,
     [Alias('s')][string]$Settings = '',
     [Alias('i')][double]$Interval = 0.25,
     [Alias('d')][double]$Settle = 0.4,
@@ -19,10 +19,10 @@ param(
 )
 
 function Usage {
-    'Usage: resize-watch.ps1 -p|-Pid <claude-pid> [-s|-Settings <settings.json>] [-i|-Interval <seconds>] [-d|-Settle <seconds>] [-h|-Help]'
+    'Usage: resize-watch.ps1 -p|-ClaudePid <claude-pid> [-s|-Settings <settings.json>] [-i|-Interval <seconds>] [-d|-Settle <seconds>] [-h|-Help]'
 }
 
-if ($Help -or $Pid -le 0) { Usage; exit ($Help ? 0 : 2) }
+if ($Help -or $ClaudePid -le 0) { Usage; exit ($Help ? 0 : 2) }
 if (-not $Settings) {
     $configDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
     $Settings = Join-Path $configDir 'settings.json'
@@ -34,7 +34,7 @@ Add-Type -Namespace Bsl -Name Con -MemberDefinition @'
 '@
 
 [void][Bsl.Con]::FreeConsole()
-if (-not [Bsl.Con]::AttachConsole([uint32]$Pid)) { exit 0 }
+if (-not [Bsl.Con]::AttachConsole([uint32]$ClaudePid)) { exit 0 }
 
 function Get-Cols {
     # [Console]::WindowWidth is srWindow.Right - srWindow.Left + 1 of the attached console: the visible width, not the buffer width.
@@ -67,7 +67,7 @@ function Set-Nonce([int]$cols) {
 
 $last = Get-Cols
 $pending = $null
-while ($null -ne (Get-Process -Id $Pid -ErrorAction SilentlyContinue)) {
+while ($null -ne (Get-Process -Id $ClaudePid -ErrorAction SilentlyContinue)) {
     Start-Sleep -Seconds $Interval
     $now = Get-Cols
     if ($now -le 0) { continue }
