@@ -29,8 +29,9 @@ valid_config() {
     ($s|type)=="array" and ($s|all(type=="string" and IN(known[]))) and (($s|unique|length)==($s|length)) and
     ((.labels//{})|to_entries|all(.value|type=="string")) and
     ((.widths//{})|to_entries|all(.value|type=="number" and floor==. and .>=1 and .<=128)) and
-    ((.fit.reserve//0)|type=="number" and floor==. and .>=0 and .<=200) and ((.fit.min_bar_cells//5)|type=="number" and floor==. and .>=1 and .<=128) and ((.fit.resize_watch//false)|type=="boolean") and ((.fit.rows//1)|IN(1,2)) and
-    ((.fit.ladder//[])|type=="array" and all(IN("disk_label","ctx_int","no_parens","disk_int","ctx_no_total","no_free","fable_short","disk_value","ctx_no_used","fable_label","fable_segment","seven_label","five_label","ctx_label","seven_segment","five_segment"))) and
+    ((.fit|if .==null then {} else . end)|type=="object") and
+    ((.fit.reserve|if .==null then 0 else . end)|type=="number" and floor==. and .>=0 and .<=200) and ((.fit.min_bar_cells|if .==null then 5 else . end)|type=="number" and floor==. and .>=1 and .<=128) and ((.fit.resize_watch|if .==null then false else . end)|type=="boolean") and ((.fit.rows|if .==null then 1 else . end)|IN(1,2)) and
+    ((.fit.ladder|if .==null then [] else . end)|type=="array" and all(IN("disk_label","ctx_int","no_parens","disk_int","ctx_no_total","no_free","fable_short","disk_value","ctx_no_used","fable_label","fable_segment","seven_label","five_label","ctx_label","seven_segment","five_segment"))) and
     ((.fable.refresh_seconds//600)>=60) and ((.fable.max_stale_seconds//86400)>=60)
   ' "$config_file" >/dev/null 2>&1
 }
