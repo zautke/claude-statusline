@@ -133,6 +133,28 @@ if (-not $env:BRAISENLY_STATUSLINE_DISABLE_REFRESH) {
     }
 }
 
+# One resize watcher per Claude Code process: walk up the parent chain to claude, lock on its pid.
+if (-not $env:BRAISENLY_STATUSLINE_DISABLE_REFRESH -and -not $env:BRAISENLY_STATUSLINE_DISABLE_WATCH) {
+    try {
+        $proc = Get-Process -Id $PID
+        for ($i = 0; $i -lt 6 -and $proc; $i++) {
+            if ($proc.ProcessName -like 'claude*') { break }
+            $parentId = (Get-CimInstance Win32_Process -Filter "ProcessId = $($proc.Id)").ParentProcessId
+            $proc = if ($parentId) { Get-Process -Id $parentId -ErrorAction SilentlyContinue } else { $null }
+        }
+        if ($proc -and $proc.ProcessName -like 'claude*') {
+            $watchDir = Join-Path $cacheRoot 'braisenly-statusline'
+            New-Item -ItemType Directory -Force -Path $watchDir | Out-Null
+            $lock = Join-Path $watchDir "resize-watch.$($proc.Id).pid"
+            $alive = (Test-Path -LiteralPath $lock) -and (Get-Process -Id ([int](Get-Content -LiteralPath $lock -Raw)) -ErrorAction SilentlyContinue)
+            if (-not $alive) {
+                $watcher = Start-Process -FilePath 'pwsh' -ArgumentList "-NoProfile -NonInteractive -File `"$(Join-Path $PSScriptRoot 'resize-watch.ps1')`" -Pid $($proc.Id) -Settings `"$configPath`"" -WindowStyle Hidden -PassThru
+                Set-Content -LiteralPath $lock -Value $watcher.Id -NoNewline
+            }
+        }
+    } catch { }
+}
+
 $input_data = [Console]::In.ReadToEnd()
 
 $ESC     = [char]27
@@ -164,8 +186,10 @@ function Get-PctColor([int]$p) {
     return "$ESC[38;2;180;60;40m"
 }
 
+# Threshold colours while a bar is shown; when bars are dropped the number carries the heat its bar tip would have had.
 function Format-PctText([int]$p) {
-    return "$(Get-PctColor $p)${p}%${R}"
+    $c = if ($script:barsOff) { Get-CellColor $p } else { Get-PctColor $p }
+    return "${c}${p}%${R}"
 }
 
 function Format-Bytes([long]$b) {

@@ -30,6 +30,10 @@ Edit `statusline.json` atomically. Start from `statusline.example.json` when abs
 
 Report an exact validation error before changing invalid input. Keep existing values not mentioned by user.
 
+## Resize watch
+
+The renderer starts one `scripts/resize-watch.sh` (or `resize-watch.ps1`) per Claude Code process. It polls the Claude pty width every 250ms and, on change, appends ` # bsl-cols=<n>` to `statusLine.command` in the active profile's `settings.json`; a command change makes Claude Code re-run the status line at once, since terminal resize is not a native trigger. Set `BRAISENLY_STATUSLINE_DISABLE_WATCH=1` to opt out. Treat the nonce suffix as Braisenly-owned when inspecting or migrating `statusLine.command`.
+
 ## Preview and verify
 
 Pipe representative Claude status JSON into `scripts/statusline-dispatcher.sh` with `BRAISENLY_STATUSLINE_DISABLE_REFRESH=1`. Show rendered line. Then run `bash tests/test-statusline.sh`.

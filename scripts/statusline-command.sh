@@ -111,13 +111,29 @@ refresh_fable() (
 if [[ $mode == refresh ]]; then refresh_fable; exit 0; fi
 [[ -n ${BRAISENLY_STATUSLINE_DISABLE_REFRESH:-} ]] || (refresh_fable) >/dev/null 2>&1 &
 
+# One resize watcher per Claude Code process: walk up the parent chain to the claude binary, lock on its pid.
+start_resize_watch() {
+  local pid=$PPID comm i lock
+  for i in 1 2 3 4 5 6; do comm=$(ps -o comm= -p "$pid" 2>/dev/null); [[ ${comm##*/} == claude* ]] && break; pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' '); [[ ${pid:-0} -gt 1 ]] || return 0; done
+  [[ ${comm##*/} == claude* ]] || return 0
+  mkdir -p "$cache_dir" 2>/dev/null || return 0
+  lock=$cache_dir/resize-watch.$pid.pid
+  [[ -r $lock ]] && kill -0 "$(cat "$lock" 2>/dev/null)" 2>/dev/null && return 0
+  nohup bash "${BASH_SOURCE[0]%/*}/resize-watch.sh" --pid "$pid" --settings "$config_dir/settings.json" >/dev/null 2>&1 &
+  printf '%s' $! >"$lock"
+}
+[[ -n ${BRAISENLY_STATUSLINE_DISABLE_REFRESH:-}${BRAISENLY_STATUSLINE_DISABLE_WATCH:-} ]] || start_resize_watch
+
 input=$(cat)
 if [[ -n ${NO_COLOR:-} ]]; then reset= model_color= label_color= sep_color= value_color= empty_color=
 else reset=$'\033[0m'; model_color=$'\033[1;38;5;75m'; label_color=$'\033[38;5;240m'; sep_color=$'\033[38;5;237m'; value_color=$'\033[38;5;243m'; empty_color=$'\033[38;5;59m'; fi
 
 sep() { printf '%s ● %s' "$sep_color" "$reset"; }
 fmt_bytes() { local b=$1; if ((b>=1073741824)); then awk -v b="$b" 'BEGIN{printf "%.1fG",b/1073741824}'; elif ((b>=1048576)); then awk -v b="$b" 'BEGIN{printf "%.1fM",b/1048576}'; elif ((b>=1024)); then awk -v b="$b" 'BEGIN{printf "%.1fK",b/1024}'; else printf '%dB' "$b"; fi; }
-pct_text() { local p=$1 r g b; if ((p<=usage_warn)); then r=$ok_r g=$ok_g b=$ok_b; elif ((p<=usage_critical)); then r=$warn_r g=$warn_g b=$warn_b; else r=$crit_r g=$crit_g b=$crit_b; fi; if [[ -n ${NO_COLOR:-} ]]; then printf '%d%%' "$p"; else printf '\033[38;2;%d;%d;%dm%d%%%s' "$r" "$g" "$b" "$p" "$reset"; fi; }
+# Gradient colour of a bar cell at position pos (0..100): green, through amber, to red.
+heat_rgb() { local pos=$1 p2; if ((pos<=50)); then printf '%d %d %d' $((40+180*pos/50)) $((170-10*pos/50)) $((60-60*pos/50)); else p2=$((pos-50)); printf '%d %d %d' $((220-40*p2/50)) $((160-160*p2/50)) 0; fi; }
+# Threshold colours while a bar is shown; when bars are dropped the number carries the heat its bar tip would have had.
+pct_text() { local p=$1 r g b; if ((bars_off)); then read -r r g b <<<"$(heat_rgb "$p")"; elif ((p<=usage_warn)); then r=$ok_r g=$ok_g b=$ok_b; elif ((p<=usage_critical)); then r=$warn_r g=$warn_g b=$warn_b; else r=$crit_r g=$crit_g b=$crit_b; fi; if [[ -n ${NO_COLOR:-} ]]; then printf '%d%%' "$p"; else printf '\033[38;2;%d;%d;%dm%d%%%s' "$r" "$g" "$b" "$p" "$reset"; fi; }
 # Fit state: bars_off=1 drops every bar; scale_num/scale_den shrink configured widths uniformly.
 bars_off=0 scale_num=1 scale_den=1
 bar_w() { local w; w=$(get_width "$1" "$2"); printf '%s' $((w*scale_num/scale_den)); }
@@ -130,7 +146,7 @@ bar() {
   full=$(((pct*width+50)/100)); ((pct>0&&full==0))&&full=1
   printf '['
   for ((i=0;i<full;i++)); do
-    ((inverted))&&pos=$((100-i*100/width))||pos=$((i*100/width)); if ((pos<=50)); then r=$((40+180*pos/50)); g=$((170-10*pos/50)); b=$((60-60*pos/50)); else p2=$((pos-50)); r=$((220-40*p2/50)); g=$((160-160*p2/50)); b=0; fi
+    ((inverted))&&pos=$((100-i*100/width))||pos=$((i*100/width)); read -r r g b <<<"$(heat_rgb "$pos")"
     [[ -n ${NO_COLOR:-} ]]&&printf '█'||printf '\033[38;2;%d;%d;%dm█' "$r" "$g" "$b"
   done
   ((full<width))&&printf '%s' "$empty_color"; for ((i=full;i<width;i++)); do printf '░'; done; printf '%s]' "$reset"
