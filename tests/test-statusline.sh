@@ -17,6 +17,7 @@ trap 'rm -rf "$TMP"' EXIT
 export HOME="$TMP/home"
 export CLAUDE_CONFIG_DIR="$TMP/config"
 export XDG_CACHE_HOME="$TMP/cache"
+export BRAISENLY_STATUSLINE_NO_LIVE_COLS=1
 mkdir -p "$HOME" "$CLAUDE_CONFIG_DIR" "$XDG_CACHE_HOME/braisenly-statusline"
 
 cat >"$CLAUDE_CONFIG_DIR/statusline.json" <<'JSON'

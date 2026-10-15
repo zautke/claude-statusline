@@ -112,21 +112,27 @@ refresh_fable() (
 if [[ $mode == refresh ]]; then refresh_fable; exit 0; fi
 [[ -n ${BRAISENLY_STATUSLINE_DISABLE_REFRESH:-} ]] || (refresh_fable) >/dev/null 2>&1 &
 
-# One resize watcher per Claude Code process: walk up the parent chain to the claude binary, lock on its pid.
+# Walk up the parent chain to the Claude Code process; its pty is the live source of the terminal width.
+claude_pid=; _p=$PPID; for _i in 1 2 3 4 5 6; do _c=$(ps -o comm= -p "$_p" 2>/dev/null); [[ ${_c##*/} == claude* ]] && { claude_pid=$_p; break; }; _p=$(ps -o ppid= -p "$_p" 2>/dev/null | tr -d ' '); [[ ${_p:-0} -gt 1 ]] || break; done
+# Live width: the pty ioctl is current at the instant we render; COLUMNS from Claude Code can lag a resize by one render.
+live_cols=; if [[ -n $claude_pid && -z ${BRAISENLY_STATUSLINE_NO_LIVE_COLS:-} ]]; then _t=$(ps -o tty= -p "$claude_pid" 2>/dev/null | tr -d ' '); [[ -n $_t && $_t != '??' && -r /dev/$_t ]] && live_cols=$(stty size </dev/$_t 2>/dev/null | awk '{print $2}'); fi
+[[ $live_cols =~ ^[0-9]+$ && $live_cols -gt 0 ]] && COLUMNS=$live_cols
+# One resize watcher per Claude Code process, locked on its pid.
 start_resize_watch() {
-  local pid=$PPID comm i lock
-  for i in 1 2 3 4 5 6; do comm=$(ps -o comm= -p "$pid" 2>/dev/null); [[ ${comm##*/} == claude* ]] && break; pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' '); [[ ${pid:-0} -gt 1 ]] || return 0; done
-  [[ ${comm##*/} == claude* ]] || return 0
+  local pid=$claude_pid lock
+  [[ -n $pid ]] || return 0
   mkdir -p "$cache_dir" 2>/dev/null || return 0
   lock=$cache_dir/resize-watch.$pid.pid
   [[ -r $lock ]] && kill -0 "$(cat "$lock" 2>/dev/null)" 2>/dev/null && return 0
-  nohup bash "${BASH_SOURCE[0]%/*}/resize-watch.sh" --pid "$pid" --settings "$config_dir/settings.json" >/dev/null 2>&1 &
+  nohup bash "${BASH_SOURCE[0]%/*}/resize-watch.sh" --pid "$pid" --settings "$config_dir/settings.json" --interval 0.1 --settle 0.2 >/dev/null 2>&1 &
   printf '%s' $! >"$lock"
 }
 # Opt-in: the watcher rewrites settings.json on resize, so it is off unless fit.resize_watch is true.
 [[ -n ${BRAISENLY_STATUSLINE_DISABLE_REFRESH:-}${BRAISENLY_STATUSLINE_DISABLE_WATCH:-} ]] || [[ $(get_cfg '.fit.resize_watch' 'false') != true ]] || start_resize_watch
 
 input=$(cat)
+# Timing trace, enabled by touching $cache_dir/trace: when each render started and what width it saw.
+[[ -e $cache_dir/trace ]] && printf '%s render COLUMNS=%s live=%s\n' "$(date +%s.%N)" "${COLUMNS:-}" "${live_cols:-}" >>"$cache_dir/trace"
 if [[ -n ${NO_COLOR:-} ]]; then reset= model_color= label_color= sep_color= value_color= empty_color=
 else reset=$'\033[0m'; model_color=$'\033[1;38;5;75m'; label_color=$'\033[38;5;240m'; sep_color=$'\033[38;5;237m'; value_color=$'\033[38;5;243m'; empty_color=$'\033[38;5;59m'; fi
 

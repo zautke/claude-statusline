@@ -69,5 +69,6 @@ while kill -0 "$pid" 2>/dev/null; do
   fi
   [[ -n $pending ]] || continue
   pending=
+  [[ -e ${settings%/*}/../.cache/braisenly-statusline/trace || -e ${XDG_CACHE_HOME:-$HOME/.cache}/braisenly-statusline/trace ]] && printf '%s bump cols=%s\n' "$(date +%s.%N)" "$now" >>"${XDG_CACHE_HOME:-$HOME/.cache}/braisenly-statusline/trace"
   bump "$now"
 done
