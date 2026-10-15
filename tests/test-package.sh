@@ -14,7 +14,7 @@ esac
 plugin="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 jq -e '.name=="braisenly-statusline" and .version=="1.0.0"' "$plugin/.claude-plugin/plugin.json" >/dev/null
-jq -e '.skill_name=="configure-statusline" and (.evals|length)==3' "$plugin/skills/configure-statusline/evals/evals.json" >/dev/null
+jq -e '.skill_name=="configure-statusline" and (.evals|length)==4' "$plugin/skills/configure-statusline/evals/evals.json" >/dev/null
 [[ $(head -n 1 "$plugin/scripts/statusline-command.sh") == '#!/usr/bin/env bash' ]]
 [[ $(head -n 1 "$plugin/scripts/statusline-command.ps1") == '#!/usr/bin/env pwsh' ]]
 [[ $(head -n 1 "$plugin/scripts/install.sh") == '#!/usr/bin/env bash' ]]
