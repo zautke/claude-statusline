@@ -136,7 +136,10 @@ if [[ -n ${NO_COLOR:-} ]]; then reset= model_color= label_color= sep_color= valu
 else reset=$'\033[0m'; model_color=$'\033[1;38;5;75m'; label_color=$'\033[38;5;240m'; sep_color=$'\033[38;5;237m'; value_color=$'\033[38;5;243m'; empty_color=$'\033[38;5;59m'; fi
 
 # ${#var} must count characters, not bytes: pick a UTF-8 locale if the host left us in a byte locale.
-_g='█'; if ((${#_g}!=1)); then for _l in C.UTF-8 en_US.UTF-8; do LC_ALL=$_l; ((${#_g}==1))&&break; done; fi; unset _g _l
+_g='█'; if ((${#_g}!=1)); then for _l in C.UTF-8 en_US.UTF-8; do LC_ALL=$_l; ((${#_g}==1))&&break; done; fi
+# Pin LC_ALL explicitly: functions below set a temporary `local LC_ALL=C`, and restoring an unset variable is not
+# portable across Bash versions, so give it a definite value to come back to.
+[[ -n ${LC_ALL:-} ]] || LC_ALL=${LC_CTYPE:-${LANG:-C.UTF-8}}; export LC_ALL; unset _g _l
 sep="$sep_color ● $reset"
 # fmt_bytes <bytes> [decimals]
 fmt_bytes() { local b=$1 d=${2:-1}; if ((b>=1073741824)); then awk -v b="$b" -v d="$d" 'BEGIN{printf "%.*fG",d,b/1073741824}'; elif ((b>=1048576)); then awk -v b="$b" -v d="$d" 'BEGIN{printf "%.*fM",d,b/1048576}'; elif ((b>=1024)); then awk -v b="$b" -v d="$d" 'BEGIN{printf "%.*fK",d,b/1024}'; else printf '%dB' "$b"; fi; }
@@ -162,14 +165,28 @@ bar() { # sets BAR; empty when bars are off. No subshells: this runs inside the 
 }
 # Display cells of a string: strip SGR, count characters, then add one more cell for each East Asian Wide or emoji
 # code point (user labels, model names, and paths may carry them). Pure bash; the wide scan only runs on exotic text.
+# Code point of one UTF-8 character, decoded from its bytes (Bash 3.2's "'$ch" yields only the first byte). Sets cp.
+utf8_cp() { local LC_ALL=C c=$1 b0 b1 b2 b3; printf -v b0 '%d' "'${c:0:1}"; ((b0<0))&&b0=$((b0+256))
+  case ${#c} in 1) cp=$b0;; 2) printf -v b1 '%d' "'${c:1:1}"; ((b1<0))&&b1=$((b1+256)); cp=$(((b0&0x1F)<<6|(b1&0x3F)));;
+    3) printf -v b1 '%d' "'${c:1:1}"; printf -v b2 '%d' "'${c:2:1}"; ((b1<0))&&b1=$((b1+256)); ((b2<0))&&b2=$((b2+256)); cp=$(((b0&0x0F)<<12|(b1&0x3F)<<6|(b2&0x3F)));;
+    *) printf -v b1 '%d' "'${c:1:1}"; printf -v b2 '%d' "'${c:2:1}"; printf -v b3 '%d' "'${c:3:1}"; ((b1<0))&&b1=$((b1+256)); ((b2<0))&&b2=$((b2+256)); ((b3<0))&&b3=$((b3+256)); cp=$(((b0&0x07)<<18|(b1&0x3F)<<12|(b2&0x3F)<<6|(b3&0x3F)));; esac; }
 cells() {
-  local s=$1 pre rest x i ch cp
-  while [[ $s == *$'\033['* ]]; do pre=${s%%$'\033['*}; rest=${s#*$'\033['}; s=$pre${rest#*m}; done
-  N=${#s}
-  x=${s//[ -~█░●…⠀]/}; [[ -n $x ]]||return 0
-  for ((i=0;i<${#x};i++)); do
-    ch=${x:i:1}; printf -v cp '%d' "'$ch"
-    if ((cp>=0x1100&&cp<=0x115F)) || ((cp>=0x2E80&&cp<=0xA4CF&&cp!=0x303F)) || ((cp>=0xAC00&&cp<=0xD7A3)) || ((cp>=0xF900&&cp<=0xFAFF)) || ((cp>=0xFE30&&cp<=0xFE4F)) || ((cp>=0xFF00&&cp<=0xFF60)) || ((cp>=0xFFE0&&cp<=0xFFE6)) || ((cp>=0x1F300&&cp<=0x1FAFF)) || ((cp>=0x20000&&cp<=0x3FFFD)); then N=$((N+1)); fi
+  local s=$1 pre rest
+  while [[ $s == *$'\033['*m* ]]; do pre=${s%%$'\033['*}; rest=${s#*$'\033['}; s=$pre${rest#*m}; done
+  N=${#s}; count_wide "$s"; N=$((N+W))
+}
+# Extra cells for East Asian Wide / emoji characters. Works byte-wise under LC_ALL=C because Bash 3.2's pattern
+# matching mangles multibyte characters in a UTF-8 locale; only the non-ASCII bytes are walked, so it stays fast.
+count_wide() {
+  local LC_ALL=C t i=0 n b0 len cp
+  # Assigned after LC_ALL is in effect so the byte-range strip is byte-wise under every locale.
+  t=${1//[$'\x01'-$'\x7f']/}
+  W=0; n=${#t}
+  while ((i<n)); do
+    printf -v b0 '%d' "'${t:i:1}"; ((b0<0))&&b0=$((b0+256))
+    if ((b0>=0xF0)); then len=4; elif ((b0>=0xE0)); then len=3; elif ((b0>=0xC0)); then len=2; else i=$((i+1)); continue; fi
+    utf8_cp "${t:i:len}"; i=$((i+len))
+    if ((cp>=0x1100&&cp<=0x115F)) || ((cp>=0x2E80&&cp<=0xA4CF&&cp!=0x303F)) || ((cp>=0xAC00&&cp<=0xD7A3)) || ((cp>=0xF900&&cp<=0xFAFF)) || ((cp>=0xFE30&&cp<=0xFE4F)) || ((cp>=0xFF00&&cp<=0xFF60)) || ((cp>=0xFFE0&&cp<=0xFFE6)) || ((cp>=0x1F300&&cp<=0x1FAFF)) || ((cp>=0x20000&&cp<=0x3FFFD)); then W=$((W+1)); fi
   done
 }
 
@@ -198,8 +215,9 @@ fable_pct=; [[ $fable != null && -n $fable ]]&&fable_pct=$(printf '%.0f' "$fable
 default_ladder='disk_label ctx_int no_parens disk_int ctx_no_total no_free fable_short disk_value ctx_no_used fable_label fable_segment seven_label five_label ctx_label seven_segment five_segment'
 ladder=$default_ladder; [[ -n $cfg ]]&&ladder=$(jq -r --arg d "$default_ladder" '(.fit.ladder // ($d|split(" ")))|join(" ")' "$cfg")
 fit_rows=$(get_cfg '.fit.rows' '1')
-declare -A F=()
-paren() { if [[ -n ${F[no_parens]:-} ]]; then P=$1; else P="($1)"; fi; }
+# Ladder flags live in one space-delimited string (Bash 3.2 has no associative arrays): F=" a b ".
+F=" "
+paren() { if [[ $F == *" no_parens "* ]]; then P=$1; else P="($1)"; fi; }
 lab() { printf '%s%s%s' "$label_color" "$1" "$reset"; }   # only used outside the fit loop
 pct_paren() { pct_text "$1"; paren "$PCT"; }               # sets P
 
@@ -214,29 +232,29 @@ build() {
       profile) [[ -n $profile ]]&&top="${label_color}prof$reset $value_color$profile$reset" ;;
       cwd) top="$value_color$cwd$reset" ;;
       context)
-        [[ -n ${F[ctx_label]:-} ]]||top="$label_color$L_ctx$reset"
+        [[ $F == *" ctx_label "* ]]||top="$label_color$L_ctx$reset"
         if [[ -n $ctx_pct ]]; then
           bar "$ctx_pct" "$W_ctx"; top+=${BAR:+${top:+ }$BAR}
-          if [[ -n ${F[ctx_int]:-} ]]; then used=$ctx_used0 total=$ctx_total0; else used=$ctx_used1 total=$ctx_total1; fi
-          [[ -n ${F[ctx_no_used]:-} ]]||bot="$value_color$used$reset"
-          [[ -n ${F[ctx_no_total]:-} ]]||bot+="$value_color${bot:+/}$total$reset"
+          if [[ $F == *" ctx_int "* ]]; then used=$ctx_used0 total=$ctx_total0; else used=$ctx_used1 total=$ctx_total1; fi
+          [[ $F == *" ctx_no_used "* ]]||bot="$value_color$used$reset"
+          [[ $F == *" ctx_no_total "* ]]||bot+="$value_color${bot:+/}$total$reset"
           pct_paren "$ctx_pct"; bot+=${bot:+ }$P
         else bar 0 "$W_ctx"; top+=${BAR:+${top:+ }$BAR}; fi ;;
       disk|tmp)
         if [[ $s == disk ]]; then pct=$disk_pct free1=$disk_free1 free0=$disk_free0 L=$L_disk W=$W_disk; else pct=$tmp_pct free1=$tmp_free1 free0=$tmp_free0 L=$L_tmp W=$W_tmp; fi
         [[ -n $pct ]]||continue
-        [[ -n ${F[disk_label]:-} ]]||top="$label_color$L$reset"
+        [[ $F == *" disk_label "* ]]||top="$label_color$L$reset"
         bar "$pct" "$W"; top+=${BAR:+${top:+ }$BAR}
-        if [[ -z ${F[disk_value]:-} ]]; then if [[ -n ${F[disk_int]:-} ]]; then bot="$value_color$free0$reset"; else bot="$value_color$free1$reset"; fi; [[ -n ${F[no_free]:-} ]]||bot+=" free"; fi ;;
+        if [[ $F != *" disk_value "* ]]; then if [[ $F == *" disk_int "* ]]; then bot="$value_color$free0$reset"; else bot="$value_color$free1$reset"; fi; [[ $F == *" no_free "* ]]||bot+=" free"; fi ;;
       five_hour)
-        [[ -n $five_pct && -z ${F[five_segment]:-} ]]||continue
-        [[ -n ${F[five_label]:-} ]]||top="$label_color$L_five$reset"; bar "$five_pct" "$W_five"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$five_pct"; bot=$P ;;
+        [[ -n $five_pct && $F != *" five_segment "* ]]||continue
+        [[ $F == *" five_label "* ]]||top="$label_color$L_five$reset"; bar "$five_pct" "$W_five"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$five_pct"; bot=$P ;;
       seven_day)
-        [[ -n $seven_pct && -z ${F[seven_segment]:-} ]]||continue
-        [[ -n ${F[seven_label]:-} ]]||top="$label_color$L_seven$reset"; bar "$seven_pct" "$W_seven"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$seven_pct"; bot=$P ;;
+        [[ -n $seven_pct && $F != *" seven_segment "* ]]||continue
+        [[ $F == *" seven_label "* ]]||top="$label_color$L_seven$reset"; bar "$seven_pct" "$W_seven"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$seven_pct"; bot=$P ;;
       fable)
-        [[ -z ${F[fable_segment]:-} ]]||continue
-        if [[ -n ${F[fable_label]:-} ]]; then :; elif [[ -n ${F[fable_short]:-} ]]; then top="$label_color${L_fable:0:1}$reset"; else top="$label_color$L_fable$reset"; fi
+        [[ $F != *" fable_segment "* ]]||continue
+        if [[ $F == *" fable_label "* ]]; then :; elif [[ $F == *" fable_short "* ]]; then top="$label_color${L_fable:0:1}$reset"; else top="$label_color$L_fable$reset"; fi
         if [[ -n $fable_pct ]]; then bar "$fable_pct" "$W_fable"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$fable_pct"; bot=$P; else bar 0 "$W_fable"; top+=${BAR:+${top:+ }$BAR}; paren n/a; bot=$P; fi ;;
     esac
     [[ -n $top$bot ]]||continue
@@ -291,13 +309,13 @@ if ((total>0)); then
 fi
 # Stage 3 (two rows only): keep the bars. Walk the ladder with bars at the best size that fits each step.
 if ((fit_rows>=2&&total>0)); then
-  for step in $ladder; do F[$step]=1; shrink_layout stacked&&{ pad_rows; emit; }; done
-  F=()
+  for step in $ladder; do F+="$step "; shrink_layout stacked&&{ pad_rows; emit; }; done
+  F=" "
 fi
 # Stage 4: bars gone; percentages carry the heat colour instead.
 scale_num=1 scale_den=1 bars_off=1
 try_layouts&&{ pad_rows; emit; }
 # Stage 5: exclusion ladder again without bars, one step at a time, re-measured after each.
-for step in $ladder; do F[$step]=1; try_layouts&&{ pad_rows; emit; }; done
+for step in $ladder; do F+="$step "; try_layouts&&{ pad_rows; emit; }; done
 # Floor: nothing left to give; Claude Code truncates the overflow.
 build; assemble_flat; emit
