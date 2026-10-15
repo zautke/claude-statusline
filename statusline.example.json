@@ -4,6 +4,6 @@
   "widths": {"context": 12, "disk": 12, "tmp": 15, "five_hour": 12, "seven_day": 12, "fable": 12},
   "thresholds": {"usage": {"warn": 60, "critical": 80}},
   "colors": {"ok": [60, 180, 80], "warn": [200, 160, 0], "critical": [180, 60, 40]},
-  "fit": {"reserve": 0, "min_bar_cells": 5},
+  "fit": {"reserve": 0, "min_bar_cells": 5, "resize_watch": false},
   "fable": {"model": "Fable", "refresh_seconds": 600, "max_stale_seconds": 86400}
 }

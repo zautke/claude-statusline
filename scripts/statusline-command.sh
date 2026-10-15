@@ -31,7 +31,7 @@ valid_config() {
     ((.widths//{})|to_entries|all(.value|type=="number" and floor==. and .>=1 and .<=128)) and
     ((.thresholds.usage.warn//60)>=0) and ((.thresholds.usage.warn//60)<=(.thresholds.usage.critical//80)) and ((.thresholds.usage.critical//80)<=100) and
     ((.colors//{})|to_entries|all(.value|type=="array" and length==3 and all(type=="number" and floor==. and .>=0 and .<=255))) and
-    ((.fit.reserve//0)|type=="number" and floor==. and .>=0 and .<=200) and ((.fit.min_bar_cells//5)|type=="number" and floor==. and .>=1 and .<=128) and
+    ((.fit.reserve//0)|type=="number" and floor==. and .>=0 and .<=200) and ((.fit.min_bar_cells//5)|type=="number" and floor==. and .>=1 and .<=128) and ((.fit.resize_watch//false)|type=="boolean") and
     ((.fable.refresh_seconds//600)>=60) and ((.fable.max_stale_seconds//86400)>=60)
   ' "$config_file" >/dev/null 2>&1
 }
@@ -122,7 +122,8 @@ start_resize_watch() {
   nohup bash "${BASH_SOURCE[0]%/*}/resize-watch.sh" --pid "$pid" --settings "$config_dir/settings.json" >/dev/null 2>&1 &
   printf '%s' $! >"$lock"
 }
-[[ -n ${BRAISENLY_STATUSLINE_DISABLE_REFRESH:-}${BRAISENLY_STATUSLINE_DISABLE_WATCH:-} ]] || start_resize_watch
+# Opt-in: the watcher rewrites settings.json on resize, so it is off unless fit.resize_watch is true.
+[[ -n ${BRAISENLY_STATUSLINE_DISABLE_REFRESH:-}${BRAISENLY_STATUSLINE_DISABLE_WATCH:-} ]] || [[ $(get_cfg '.fit.resize_watch' 'false') != true ]] || start_resize_watch
 
 input=$(cat)
 if [[ -n ${NO_COLOR:-} ]]; then reset= model_color= label_color= sep_color= value_color= empty_color=

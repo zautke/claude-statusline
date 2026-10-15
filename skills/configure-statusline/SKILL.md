@@ -24,7 +24,7 @@ Edit `statusline.json` atomically. Start from `statusline.example.json` when abs
 - `labels`: string labels keyed by segment.
 - `widths`: integer indicator lengths from 1 through 128.
 - `thresholds.usage`: `0 <= warn <= critical <= 100`.
-- `fit`: `reserve` cells (0 through 200) held back from the `COLUMNS` budget, and `min_bar_cells` (1 through 128); bars shrink uniformly to fit `COLUMNS - 3 - reserve`, drop entirely when any bar would fall below the floor, and the line is space-padded to the budget after shrinking.
+- `fit`: `resize_watch` boolean (default false), `reserve` cells (0 through 200) held back from the `COLUMNS` budget, and `min_bar_cells` (1 through 128); bars shrink uniformly to fit `COLUMNS - 3 - reserve`, drop entirely when any bar would fall below the floor, and the line is space-padded to the budget after shrinking.
 - `colors`: `ok`, `warn`, and `critical`, each exactly three integer Red-Green-Blue values from 0 through 255.
 - `fable`: model display name, refresh interval of at least 60 seconds, and maximum stale interval of at least 60 seconds.
 
@@ -32,7 +32,7 @@ Report an exact validation error before changing invalid input. Keep existing va
 
 ## Resize watch
 
-The renderer starts one `scripts/resize-watch.sh` (or `resize-watch.ps1`) per Claude Code process. It polls the Claude pty width every 250ms and, on change, appends ` # bsl-cols=<n>` to `statusLine.command` in the active profile's `settings.json`; a command change makes Claude Code re-run the status line at once, since terminal resize is not a native trigger. Set `BRAISENLY_STATUSLINE_DISABLE_WATCH=1` to opt out. Treat the nonce suffix as Braisenly-owned when inspecting or migrating `statusLine.command`.
+Opt-in via `fit.resize_watch: true` (default off, because it rewrites `settings.json`). When enabled the renderer starts one `scripts/resize-watch.sh` (or `resize-watch.ps1`) per Claude Code process. It polls the Claude pty width every 250ms and, on change, after the width settles for 400ms appends ` # bsl-cols=<n>` to `statusLine.command` in the active profile's `settings.json`; a command change makes Claude Code re-run the status line at once, since terminal resize is not a native trigger. Writes go through a validated temp file, atomic rename, and compare-and-swap against concurrent Claude Code writes; a one-time `settings.json.bsl-backup` is kept. The zero-write alternative is `statusLine.refreshInterval` in `settings.json`. Set `BRAISENLY_STATUSLINE_DISABLE_WATCH=1` to force it off. Treat the nonce suffix as Braisenly-owned when inspecting or migrating `statusLine.command`.
 
 ## Preview and verify
 

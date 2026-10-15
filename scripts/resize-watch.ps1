@@ -4,17 +4,22 @@
 # the statusLine command nonce in settings.json when it changes so Claude Code
 # re-runs the status line immediately. Reads GetConsoleScreenBufferInfo only;
 # never ReadConsoleInput, which would steal keystrokes from the shared input queue.
+#
+# Safety: writes only after the width has settled, only through validated temp file +
+# atomic rename, only when the file has not changed since it was read (compare-and-swap),
+# and only after keeping a one-time backup beside the settings file.
 # UNTESTED on a live desktop session: AttachConsole needs the same interactive session as Claude Code.
 
 param(
     [Alias('p')][int]$Pid = 0,
     [Alias('s')][string]$Settings = '',
     [Alias('i')][double]$Interval = 0.25,
+    [Alias('d')][double]$Settle = 0.4,
     [Alias('h')][switch]$Help
 )
 
 function Usage {
-    'Usage: resize-watch.ps1 -p|-Pid <claude-pid> [-s|-Settings <settings.json>] [-i|-Interval <seconds>] [-h|-Help]'
+    'Usage: resize-watch.ps1 -p|-Pid <claude-pid> [-s|-Settings <settings.json>] [-i|-Interval <seconds>] [-d|-Settle <seconds>] [-h|-Help]'
 }
 
 if ($Help -or $Pid -le 0) { Usage; exit ($Help ? 0 : 2) }
@@ -36,25 +41,43 @@ function Get-Cols {
     try { return [Console]::WindowWidth } catch { return 0 }
 }
 
+function Get-Digest([string]$path) { return (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash }
+
 function Set-Nonce([int]$cols) {
     if (-not (Test-Path -LiteralPath $Settings)) { return }
     try {
-        # Re-read on every bump: Claude Code also writes this file.
+        if (-not (Test-Path -LiteralPath "$Settings.bsl-backup")) { Copy-Item -LiteralPath $Settings -Destination "$Settings.bsl-backup" }
+        $before = Get-Digest $Settings
         $cfg = Get-Content -LiteralPath $Settings -Raw | ConvertFrom-Json
         $cmd = [string]$cfg.statusLine.command
         if (-not $cmd) { return }
+        $keysBefore = ($cfg.PSObject.Properties.Name | Sort-Object) -join ','
         $cfg.statusLine.command = ($cmd -replace ' # bsl-cols=\d+$', '') + " # bsl-cols=$cols"
         $tmp = "$Settings.tmp.$PID"
         $cfg | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $tmp -Encoding utf8
+        # Validate: parses, and no top-level key was lost.
+        $check = Get-Content -LiteralPath $tmp -Raw | ConvertFrom-Json
+        $keysAfter = ($check.PSObject.Properties.Name | Sort-Object) -join ','
+        if ($keysBefore -ne $keysAfter) { Remove-Item -LiteralPath $tmp -Force; return }
+        # Compare-and-swap: Claude Code also writes this file; if it changed since we read it, drop this bump.
+        if ((Get-Digest $Settings) -ne $before) { Remove-Item -LiteralPath $tmp -Force; return }
         Move-Item -LiteralPath $tmp -Destination $Settings -Force
     } catch { }
 }
 
 $last = Get-Cols
+$pending = $null
 while ($null -ne (Get-Process -Id $Pid -ErrorAction SilentlyContinue)) {
     Start-Sleep -Seconds $Interval
     $now = Get-Cols
-    if ($now -le 0 -or $now -eq $last) { continue }
-    $last = $now
+    if ($now -le 0) { continue }
+    if ($now -ne $last) {
+        # Width is moving (pane drag). Wait for it to settle before writing once.
+        $last = $now; $pending = $now
+        Start-Sleep -Seconds $Settle
+        continue
+    }
+    if ($null -eq $pending) { continue }
+    $pending = $null
     Set-Nonce $now
 }

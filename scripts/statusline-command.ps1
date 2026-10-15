@@ -40,6 +40,7 @@ $fableRefreshSeconds = 600
 $fableMaxStale = 86400
 $fitReserve = 0
 $minBarCells = 5
+$resizeWatch = $false
 $configPath = Join-Path $configDir 'statusline.json'
 if (Test-Path -LiteralPath $configPath) {
     try {
@@ -48,6 +49,7 @@ if (Test-Path -LiteralPath $configPath) {
         if ($cfg.widths.fable) { $fableWidth = [int]$cfg.widths.fable }
         if ($null -ne $cfg.fit.reserve) { $fitReserve = [int]$cfg.fit.reserve }
         if ($cfg.fit.min_bar_cells) { $minBarCells = [int]$cfg.fit.min_bar_cells }
+        if ($cfg.fit.resize_watch -eq $true) { $resizeWatch = $true }
         if ($cfg.fable.refresh_seconds) { $fableRefreshSeconds = [int64]$cfg.fable.refresh_seconds }
         if ($cfg.fable.max_stale_seconds) { $fableMaxStale = [int64]$cfg.fable.max_stale_seconds }
     } catch { }
@@ -134,7 +136,8 @@ if (-not $env:BRAISENLY_STATUSLINE_DISABLE_REFRESH) {
 }
 
 # One resize watcher per Claude Code process: walk up the parent chain to claude, lock on its pid.
-if (-not $env:BRAISENLY_STATUSLINE_DISABLE_REFRESH -and -not $env:BRAISENLY_STATUSLINE_DISABLE_WATCH) {
+# Opt-in: the watcher rewrites settings.json on resize, so it is off unless fit.resize_watch is true.
+if ($resizeWatch -and -not $env:BRAISENLY_STATUSLINE_DISABLE_REFRESH -and -not $env:BRAISENLY_STATUSLINE_DISABLE_WATCH) {
     try {
         $proc = Get-Process -Id $PID
         for ($i = 0; $i -lt 6 -and $proc; $i++) {
