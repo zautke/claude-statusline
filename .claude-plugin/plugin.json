@@ -1,11 +1,16 @@
 {
   "name": "braisenly-statusline",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Configurable Claude Code status line with native limits, Fable usage, system health, and terminal-width fitting.",
   "author": {
     "name": "Luke Zautke",
     "email": "me@lukezautke.com"
   },
   "license": "MIT",
-  "keywords": ["braisenly", "claude-code", "statusline", "fable"]
+  "keywords": [
+    "braisenly",
+    "claude-code",
+    "statusline",
+    "fable"
+  ]
 }
