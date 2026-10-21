@@ -159,13 +159,16 @@ order=(disk_label ctx_int no_parens disk_int ctx_no_total no_free fable_short di
 pin='"segments":["model","cwd","context","disk","five_hour","seven_day","fable"]'
 floor() { local steps= s; for s in "$@"; do steps+=${steps:+,}"\"$s\""; done; printf '{%s,"fit":{"rows":1,"ladder":[%s]}}' "$pin" "$steps" >"$CLAUDE_CONFIG_DIR/statusline.json"; render 10; }
 trim() { local s=$1; printf '%s' "${s%"${s##*[! ]}"}"; }
+# The disk segment is always the 4th in the pinned order; mask its number so a free-space change between two renders
+# does not fail a comparison. ponytail: a digit-count change (9.9G -> 10.0G) mid-run still shifts the widths by one.
+mask_disk() { awk -F ' ● ' -v OFS=' ● ' -v re="$DISK_SEGMENT_NUMBER_INTEGER_WITH_OPTIONAL_ONE_DECIMAL" 'NF>=4{gsub(re,"N",$4)}1' <<<"$1"; }
 base=$(floor)
 [[ $base =~ $DISK_FREE_ONE_DECIMAL_THEN_UNIT_THEN_SPACE_FREE ]] || { printf 'baseline lost the disk value: %s\n' "$base" >&2; exit 1; }
 dnum=${BASH_REMATCH[1]} dunit=${BASH_REMATCH[2]}; dtok=$dnum$dunit
 # Each step on its own: exactly its declared change to the bars-off baseline, nothing else.
 expect_step() { # $1 step, $2 expected floor output
   [[ $2 != "$base" ]] || { printf 'ladder %s: expectation is a no-op on baseline: %s\n' "$1" "$base" >&2; exit 1; }
-  local o; o=$(floor "$1"); [[ $o == "$2" ]] || { printf 'ladder %s: got [%s] want [%s]\n' "$1" "$o" "$2" >&2; exit 1; }
+  local o; o=$(floor "$1"); [[ $(mask_disk "$o") == "$(mask_disk "$2")" ]] || { printf 'ladder %s: got [%s] want [%s]\n' "$1" "$o" "$2" >&2; exit 1; }
 }
 t=${base//(/}; t=${t//)/}
 expect_step disk_label "${base//disk /}"
@@ -198,10 +201,10 @@ printf '{%s,"fit":{"rows":1}}' "$pin" >"$CLAUDE_CONFIG_DIR/statusline.json"
 for ((k=0;k<=${#order[@]};k++)); do
   lk=$(cells "${floors[k]}")
   at=$(trim "$(render $((lk+margin)))")
-  [[ $at == "${floors[k]}" ]] || { printf 'ladder progression: at %s cols want %s steps [%s] got [%s]\n' $((lk+margin)) "$k" "${floors[k]}" "$at" >&2; exit 1; }
+  [[ $(mask_disk "$at") == "$(mask_disk "${floors[k]}")" ]] || { printf 'ladder progression: at %s cols want %s steps [%s] got [%s]\n' $((lk+margin)) "$k" "${floors[k]}" "$at" >&2; exit 1; }
   if ((k<${#order[@]})); then
     below=$(trim "$(render $((lk+margin-1)))")
-    [[ $below == "${floors[k+1]}" ]] || { printf 'ladder progression: at %s cols want %s steps [%s] got [%s]\n' $((lk+margin-1)) $((k+1)) "${floors[k+1]}" "$below" >&2; exit 1; }
+    [[ $(mask_disk "$below") == "$(mask_disk "${floors[k+1]}")" ]] || { printf 'ladder progression: at %s cols want %s steps [%s] got [%s]\n' $((lk+margin-1)) $((k+1)) "${floors[k+1]}" "$below" >&2; exit 1; }
   fi
 done
 printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"

@@ -31,3 +31,6 @@ $DISK_FREE_INTEGER_THEN_UNIT_THEN_SPACE_FREE = ' ([0-9]+)([KMG]) free'
 $DISK_FREE_ANY_NUMBER_THEN_UNIT_THEN_SPACE_FREE = '[0-9.]+[KMG] free'
 # Start of an ANSI SGR escape sequence (ESC [).
 $ANSI_ESCAPE_SEQUENCE_START = "`e\["
+
+# Test masking: the number in the disk segment (free space moves between renders on a busy machine).
+$DISK_SEGMENT_NUMBER_INTEGER_WITH_OPTIONAL_ONE_DECIMAL = '[0-9]+([.][0-9])?'

@@ -143,6 +143,9 @@ try {
     $order = @('disk_label', 'ctx_int', 'no_parens', 'disk_int', 'ctx_no_total', 'no_free', 'fable_short', 'disk_value', 'ctx_no_used', 'fable_label', 'fable_segment', 'seven_label', 'five_label', 'ctx_label', 'seven_segment', 'five_segment')
     $pin = '"segments":["model","cwd","context","disk","five_hour","seven_day","fable"]'
     function Floor([string[]]$steps) { Set-Config ('{' + $pin + ',"fit":{"rows":1,"ladder":[' + (($steps | ForEach-Object { "`"$_`"" }) -join ',') + ']}}'); return (Render 10) }
+    # The disk segment is always the 4th in the pinned order; mask its number so a free-space change between two renders
+    # does not fail a comparison. ponytail: a digit-count change (9.9G -> 10.0G) mid-run still shifts the widths by one.
+    function Mask-Disk([string]$s) { $seg = $s -split ' ● '; if ($seg.Count -ge 4) { $seg[3] = $seg[3] -replace $DISK_SEGMENT_NUMBER_INTEGER_WITH_OPTIONAL_ONE_DECIMAL, 'N' }; return ($seg -join ' ● ') }
     $base = Floor @()
     $m = [regex]::Match($base, $DISK_FREE_ONE_DECIMAL_THEN_UNIT_THEN_SPACE_FREE)
     if (-not $m.Success) { Fail "baseline lost the disk value: $base" }
@@ -168,7 +171,7 @@ try {
     foreach ($s in $expect.Keys) {
         if ($expect[$s] -eq $base) { Fail "ladder ${s}: expectation is a no-op on baseline: $base" }
         $o = Floor @($s)
-        if ($o -ne $expect[$s]) { Fail "ladder ${s}: got [$o] want [$($expect[$s])]" }
+        if ((Mask-Disk $o) -ne (Mask-Disk $expect[$s])) { Fail "ladder ${s}: got [$o] want [$($expect[$s])]" }
     }
     $o = Floor @('disk_int')
     $mi = [regex]::Match($o, $DISK_FREE_INTEGER_THEN_UNIT_THEN_SPACE_FREE)
@@ -184,10 +187,10 @@ try {
     for ($k = 0; $k -le $order.Count; $k++) {
         $lk = Get-Cells $floors[$k]
         $at = (Render ($lk + $margin)).TrimEnd()
-        if ($at -ne $floors[$k]) { Fail "ladder progression: at $($lk + $margin) cols want $k steps [$($floors[$k])] got [$at]" }
+        if ((Mask-Disk $at) -ne (Mask-Disk $floors[$k])) { Fail "ladder progression: at $($lk + $margin) cols want $k steps [$($floors[$k])] got [$at]" }
         if ($k -lt $order.Count) {
             $below = (Render ($lk + $margin - 1)).TrimEnd()
-            if ($below -ne $floors[$k + 1]) { Fail "ladder progression: at $($lk + $margin - 1) cols want $($k + 1) steps [$($floors[$k + 1])] got [$below]" }
+            if ((Mask-Disk $below) -ne (Mask-Disk $floors[$k + 1])) { Fail "ladder progression: at $($lk + $margin - 1) cols want $($k + 1) steps [$($floors[$k + 1])] got [$below]" }
         }
     }
     Set-Config '{bad json'
