@@ -9,6 +9,8 @@ set -uo pipefail
 command -v jq >/dev/null 2>&1 || { echo "drift-control.sh: requires 'jq' in PATH" >&2; exit 1; }
 
 STATE_DIR="$HOME/.claude/state/drift"
+# shellcheck source=../config/constants.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/config/constants.sh"
 
 Usage() {
   cat <<'EOF'
@@ -23,6 +25,7 @@ Options:
   -p, --set-paused <true|false>    Set paused flag.
   -r, --set-provider <name>        Force provider: groq|gemini|openai|ollama|auto (auto=null).
   -R, --resolve-session            Print resolved session id and exit.
+  -n, --recent <N>                 Print the last N scores as compact {ts,score,tag,provider} lines.
   -h, --help                       Show this help.
 
 Defaults when file absent: paused=false, force_provider=null.
@@ -36,6 +39,7 @@ DO_GET=0
 DO_RESOLVE=0
 SET_PAUSED=""
 SET_PROVIDER=""
+RECENT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -44,6 +48,7 @@ while [[ $# -gt 0 ]]; do
     -p|--set-paused)      SET_PAUSED="${2:-}"; shift 2 ;;
     -r|--set-provider)    SET_PROVIDER="${2:-}"; shift 2 ;;
     -R|--resolve-session) DO_RESOLVE=1; shift ;;
+    -n|--recent)          RECENT="${2:-}"; shift 2 ;;
     -h|--help)            Usage; exit 0 ;;
     *) echo "drift-control.sh: unknown argument: $1" >&2; Usage >&2; exit 2 ;;
   esac
@@ -64,7 +69,7 @@ if [[ -z "$SESSION_ID" ]]; then
 fi
 
 # Reject session ids that could escape STATE_DIR (path traversal / separators).
-if [[ "$SESSION_ID" == *..* || "$SESSION_ID" == */* || ! "$SESSION_ID" =~ ^[A-Za-z0-9._-]+$ ]]; then
+if [[ "$SESSION_ID" == *..* || "$SESSION_ID" == */* || ! "$SESSION_ID" =~ $SESSION_ID_ONLY_LETTERS_DIGITS_DOT_UNDERSCORE_HYPHEN ]]; then
   echo "drift-control.sh: invalid session id: $SESSION_ID" >&2
   exit 2
 fi
@@ -136,7 +141,12 @@ if [[ "$DO_GET" == "1" ]]; then
   read_control
 fi
 
+if [[ -n "$RECENT" ]]; then
+  [[ "$RECENT" =~ $NON_NEGATIVE_INTEGER_DIGITS_ONLY ]] || { echo "drift-control.sh: --recent must be a non-negative integer" >&2; exit 2; }
+  [[ -r "$STATE_DIR/$SESSION_ID.jsonl" ]] && tail -n "$RECENT" "$STATE_DIR/$SESSION_ID.jsonl" | jq -c '{ts,score,tag,provider}' 2>/dev/null
+fi
+
 # Nothing actionable requested → help.
-if [[ "$DO_GET" == "0" && -z "$SET_PAUSED" && -z "$SET_PROVIDER" ]]; then
+if [[ "$DO_GET" == "0" && -z "$SET_PAUSED" && -z "$SET_PROVIDER" && -z "$RECENT" ]]; then
   Usage
 fi

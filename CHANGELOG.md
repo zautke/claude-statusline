@@ -14,6 +14,7 @@ and each merge into `development` adds an entry to `changeset.md`.
 - This repository is now the plugin's only source and its own marketplace (`braisenly-statusline@braisenly-statusline`). The copies in `zautke/braisenly-plugins` and dot-agents `profiles/` are retired.
 - `statusLine.command` now points at a stable launcher in `<config-dir>/braisenly-statusline/`, copied there by `install.{sh,ps1}`. On every render it runs the installed plugin version, so updates reach the status line without a settings edit. If the plugin is not installed it prints `braisenly-statusline: not installed` and exits 0.
 - Brought in `/drift-control` (command, scripts, Textual menu, tmux popup) from the marketplace copies. Its scripts resolve their siblings from their own directory instead of `~/.claude/scripts`. Rubric edits go to `~/.claude/state/drift/rubric.md`, which survives updates.
+- Added `drift-control.ps1`, a PowerShell twin of `drift-control.sh` with the same arguments and output, so `/drift-control` runs on Windows without bash. Both twins gained `-n|--recent <N>`. The command runs the PowerShell twin on Windows and the bash twin elsewhere.
 - Identity and regex constants live in `config/` (`identity.env`, `constants.{sh,ps1}`).
 
 ## [1.1.0] — 2026-10-16
