@@ -15,3 +15,11 @@
 - braisenly-plugins `main` is a publish mirror (`chore(publish): sync from dot-agents`). The statusline directory left dot-agents on 2026-09-20; publish behaviour for the vendored copy is unverified.
 - Release rule for plugins: plain SemVer `X.Y.Z`, tag `braisenly-statusline@X.Y.Z`, CHANGELOG entry. Org 4-part stamp and `v` prefix do not apply (kb addendum 2026-10-16).
 - `tests/test-package.sh` must never assert a literal version; it is the release gate.
+
+## 2026-10-20
+
+- Plugin versions are plain SemVer with `{name}@{version}` tags (kb org policy, 2026-10-16 addendum). Never apply the org 4-part stamp to `plugin.json`. This was repeated on 2026-10-20 and caught before review.
+- Claude Code shows the status line `COLUMNS - 4` cells wide. Budget = `COLUMNS - STATUS_LINE_AREA_HORIZONTAL_MARGIN_CELLS - fit.reserve`.
+- Live tests must run in the user's own terminal (adagio: Windows Terminal Preview `PowerShell` profile, launched via `shell:AppsFolder\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe!App`), never in a window spawned from the agent shell. That shell carries `NO_COLOR=1` and session variables.
+- `.sh`/`.ps1` twins need twin tests. The pwsh renderer had silently ignored segments, labels, widths and `NO_COLOR`.
+- A user-level `~/.claude/commands/drift-control.md` shadows the plugin command; the plugin's stays reachable as `/claude-statusline:drift-control`.

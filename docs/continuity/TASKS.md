@@ -24,3 +24,20 @@
 - [ ] Optional: branch name on row 2 under cwd when stacked.
 - [ ] Optional: strip `thresholds`/`colors` from existing user configs when the skill next touches them.
 - [ ] largo disk: 5.7 GiB free, `~/.cache/uv/archive-v0` 8.2 GiB. Not touched.
+
+## Done (2026-10-20)
+
+- [x] Coalesce: this repo is the only source and marketplace. braisenly-plugins (PR #6) and dot-agents (PR #24) copies removed. The publish guard `EXTRACTED_PLUGINS` stops re-adds, which answers the open "what does the next publish do" item.
+- [x] Rename to claude-statusline, Claude Code only. Repo renamed.
+- [x] Stable launcher. Updates reach the status line with no settings edit (E11).
+- [x] `drift-control.ps1` twin; `/drift-control` paths fixed.
+- [x] Windows resize watcher verified live in a field window (closes the open item above).
+- [x] Fit margin fix (`COLUMNS-4`).
+- [x] pwsh renderer parity; `test-statusline.ps1` twin; ladder map tests; mutation-checked.
+- [x] Both hosts migrated off the stale `~/braisenly-statusline` clone.
+
+## Open (2026-10-20)
+
+- [ ] Release 2.0.0: merge PR #10 to `development`, promote to `main`, tag `claude-statusline@2.0.0`. Then switch both hosts' marketplace from `#feat/coalesce-plugin-copies` to `main`.
+- [ ] Delete the stale `~/braisenly-statusline` clone on adagio and largo. Needs user confirmation.
+- [ ] Live re-run of E10 (`/drift-control`) in a field window; largo user-impersonation cases.
