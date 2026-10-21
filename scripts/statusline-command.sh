@@ -17,7 +17,7 @@ done
 
 config_dir=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
 config_file=$config_dir/statusline.json
-cache_dir=${XDG_CACHE_HOME:-$HOME/.cache}/braisenly-statusline
+cache_dir=${XDG_CACHE_HOME:-$HOME/.cache}/claude-statusline
 cache_file=$cache_dir/fable.json
 default_segments='["model","profile","cwd","context","disk","tmp","five_hour","seven_day","fable"]'
 
@@ -86,7 +86,7 @@ refresh_fable() (
   token=$(oauth_token); [[ -n "$token" ]] || return 0
   # Claim the slot before the request so a failure backs off instead of retrying on every render.
   printf '%s' $((now+refresh_seconds)) >"$next_file"
-  if ! response=$(printf 'Authorization: Bearer %s\n' "$token" | curl -fsS -D "$headers" --max-time 8 -H @- -H 'anthropic-beta: oauth-2025-04-20' -H 'Accept: application/json' -H 'User-Agent: claude-code/braisenly-statusline' "${BRAISENLY_STATUSLINE_USAGE_URL:-https://api.anthropic.com/api/oauth/usage}" 2>/dev/null); then
+  if ! response=$(printf 'Authorization: Bearer %s\n' "$token" | curl -fsS -D "$headers" --max-time 8 -H @- -H 'anthropic-beta: oauth-2025-04-20' -H 'Accept: application/json' -H 'User-Agent: claude-code/claude-statusline' "${CLAUDE_STATUSLINE_USAGE_URL:-https://api.anthropic.com/api/oauth/usage}" 2>/dev/null); then
     retry=$(tr -d '\r' <"$headers" 2>/dev/null | awk -F': *' 'tolower($1)=="retry-after"{print $2}' | tail -1)
     [[ $retry =~ ^[0-9]+$ ]] && ((retry>refresh_seconds)) && printf '%s' $((now+retry)) >"$next_file"
     return 0
@@ -99,12 +99,12 @@ refresh_fable() (
 )
 
 if [[ $mode == refresh ]]; then refresh_fable; exit 0; fi
-[[ -n ${BRAISENLY_STATUSLINE_DISABLE_REFRESH:-} ]] || (refresh_fable) >/dev/null 2>&1 &
+[[ -n ${CLAUDE_STATUSLINE_DISABLE_REFRESH:-} ]] || (refresh_fable) >/dev/null 2>&1 &
 
 # Walk up the parent chain to the Claude Code process; its pty is the live source of the terminal width.
 claude_pid=; _p=$PPID; for _i in 1 2 3 4 5 6; do _c=$(ps -o comm= -p "$_p" 2>/dev/null); [[ ${_c##*/} == claude* ]] && { claude_pid=$_p; break; }; _p=$(ps -o ppid= -p "$_p" 2>/dev/null | tr -d ' '); [[ ${_p:-0} -gt 1 ]] || break; done
 # Live width: the pty ioctl is current at the instant we render; COLUMNS from Claude Code can lag a resize by one render.
-live_cols=; if [[ -n $claude_pid && -z ${BRAISENLY_STATUSLINE_NO_LIVE_COLS:-} ]]; then _t=$(ps -o tty= -p "$claude_pid" 2>/dev/null | tr -d ' '); [[ -n $_t && $_t != '??' && -r /dev/$_t ]] && live_cols=$(stty size </dev/$_t 2>/dev/null | awk '{print $2}'); fi
+live_cols=; if [[ -n $claude_pid && -z ${CLAUDE_STATUSLINE_NO_LIVE_COLS:-} ]]; then _t=$(ps -o tty= -p "$claude_pid" 2>/dev/null | tr -d ' '); [[ -n $_t && $_t != '??' && -r /dev/$_t ]] && live_cols=$(stty size </dev/$_t 2>/dev/null | awk '{print $2}'); fi
 [[ $live_cols =~ ^[0-9]+$ && $live_cols -gt 0 ]] && COLUMNS=$live_cols
 # One resize watcher per Claude Code process, locked on its pid.
 start_resize_watch() {
@@ -127,7 +127,7 @@ start_resize_watch() {
   rmdir "$lock.spawn" 2>/dev/null
 }
 # Opt-in: the watcher rewrites settings.json on resize, so it is off unless fit.resize_watch is true.
-[[ -n ${BRAISENLY_STATUSLINE_DISABLE_WATCH:-} ]] || [[ $(get_cfg '.fit.resize_watch' 'false') != true ]] || start_resize_watch
+[[ -n ${CLAUDE_STATUSLINE_DISABLE_WATCH:-} ]] || [[ $(get_cfg '.fit.resize_watch' 'false') != true ]] || start_resize_watch
 
 input=$(cat)
 # Timing trace, enabled by touching $cache_dir/trace: when each render started and what width it saw.
@@ -282,7 +282,9 @@ try_layouts() { build; assemble_flat; fits&&return 0; if ((fit_rows>=2)); then a
 pad_rows() { cells "$row1"; ((N<budget))&&printf -v _p '%*s' $((budget-N)) ''&&row1+=$_p; if [[ -n $row2 ]]; then cells "$row2"; ((N<budget))&&printf -v _p '%*s' $((budget-N)) ''&&row2+=$_p; fi; }
 
 if ! [[ ${COLUMNS:-} =~ ^[0-9]+$ ]] || ((COLUMNS<=0)); then build; assemble_flat; emit; fi
-budget=$((COLUMNS-3-fit_reserve)); ((budget<1))&&budget=1
+# shellcheck source=../config/constants.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/config/constants.sh"
+budget=$((COLUMNS-STATUS_LINE_AREA_HORIZONTAL_MARGIN_CELLS-fit_reserve)); ((budget<1))&&budget=1
 # Stage 1: full bars.
 try_layouts&&emit
 # Stage 2: shrink bars uniformly. Walk the shared ratio down one cell at a time (stacked cells are bounded by their

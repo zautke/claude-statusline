@@ -25,6 +25,7 @@ function Usage {
 }
 
 if ($Help -or $ClaudePid -le 0) { Usage; exit ($Help ? 0 : 2) }
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'config/constants.ps1')
 if (-not $Settings) {
     $configDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
     $Settings = Join-Path $configDir 'settings.json'
@@ -55,11 +56,11 @@ function Set-Nonce([int]$cols) {
         $before = Get-Digest $Settings
         $cfg = Get-Content -LiteralPath $Settings -Raw | ConvertFrom-Json
         $cmd = [string]$cfg.statusLine.command
-        # Only a Braisenly-owned statusLine command gets a nonce; if the user switched or removed it, this watcher is done.
-        $bare = $cmd -replace ' # bsl-cols=\d+$', ''
-        if ($bare -notmatch 'braisenly-statusline[\\/]scripts[\\/]statusline-(dispatcher|command)\.(sh|ps1)' -and $bare -ne 'bash ~/.claude/statusline-dispatcher.sh') { exit 0 }
+        # Only a claude-statusline-owned statusLine command gets a nonce; if the user switched or removed it, this watcher is done.
+        $bare = $cmd -replace $NONCE_SUFFIX_SPACE_HASH_BSL_COLS_EQUALS_DIGITS_AT_END, ''
+        if ($bare -notmatch $OWNED_COMMAND_CLAUDE_OR_LEGACY_BRAISENLY_STATUSLINE_SCRIPTS_DISPATCHER_COMMAND_OR_LAUNCH -and $bare -ne 'bash ~/.claude/statusline-dispatcher.sh') { exit 0 }
         $keysBefore = ($cfg.PSObject.Properties.Name | Sort-Object) -join ','
-        $cfg.statusLine.command = ($cmd -replace ' # bsl-cols=\d+$', '') + " # bsl-cols=$cols"
+        $cfg.statusLine.command = $bare + " # bsl-cols=$cols"
         $tmp = "$Settings.tmp.$PID"
         $cfg | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $tmp -Encoding utf8
         # Carry the original ACL onto the temp file so the rename never loosens permissions.

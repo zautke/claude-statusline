@@ -59,8 +59,24 @@ if (Test-Path -LiteralPath $configPath) {
             if ($null -ne $cfg.fit.min_bar_cells -and ($cfg.fit.min_bar_cells -lt 1 -or $cfg.fit.min_bar_cells -gt 128)) { throw 'invalid fit.min_bar_cells' }
             if ($null -ne $cfg.fit.resize_watch -and $cfg.fit.resize_watch -isnot [bool]) { throw 'invalid fit.resize_watch' }
         }
-        if ($cfg.fable.model) { $fableModel = [string]$cfg.fable.model; $fableLabel = $fableModel }
-        if ($cfg.widths.fable) { $fableWidth = [int]$cfg.widths.fable }
+        # "drift" is accepted for configs written before the segment was retired; the renderer skips it.
+        $knownSegments = @('model', 'profile', 'cwd', 'context', 'disk', 'tmp', 'five_hour', 'seven_day', 'fable', 'drift')
+        if ($null -ne $cfg.segments) {
+            $seg = $cfg.segments
+            if ($seg -isnot [array] -or @($seg | Where-Object { $_ -isnot [string] -or $_ -cnotin $knownSegments }).Count -gt 0 -or
+                @($seg | Select-Object -Unique).Count -ne @($seg).Count) { throw 'invalid segments' }
+        }
+        if ($null -ne $cfg.labels) {
+            if ($cfg.labels -isnot [System.Management.Automation.PSCustomObject]) { throw 'invalid labels' }
+            foreach ($p in $cfg.labels.PSObject.Properties) { if ($p.Value -isnot [string]) { throw 'invalid labels' } }
+        }
+        if ($null -ne $cfg.widths) {
+            if ($cfg.widths -isnot [System.Management.Automation.PSCustomObject]) { throw 'invalid widths' }
+            foreach ($p in $cfg.widths.PSObject.Properties) { if (-not (Test-Int $p.Value) -or $p.Value -lt 1 -or $p.Value -gt 128) { throw 'invalid widths' } }
+        }
+        if ($null -ne $cfg.fable.refresh_seconds -and $cfg.fable.refresh_seconds -lt 60) { throw 'invalid fable.refresh_seconds' }
+        if ($null -ne $cfg.fable.max_stale_seconds -and $cfg.fable.max_stale_seconds -lt 60) { throw 'invalid fable.max_stale_seconds' }
+        if ($cfg.fable.model) { $fableModel = [string]$cfg.fable.model }
         if ($null -ne $cfg.fit.reserve) { $fitReserve = [int]$cfg.fit.reserve }
         if ($cfg.fit.min_bar_cells) { $minBarCells = [int]$cfg.fit.min_bar_cells }
         if ($cfg.fit.resize_watch -eq $true) { $resizeWatch = $true }
@@ -68,7 +84,22 @@ if (Test-Path -LiteralPath $configPath) {
         if ($cfg.fable.max_stale_seconds) { $fableMaxStale = [int64]$cfg.fable.max_stale_seconds }
     } catch { $cfg = $null; $fableModel = 'Fable'; $fableLabel = 'Fable'; $fableWidth = 12; $fitReserve = 0; $minBarCells = 5; $resizeWatch = $false; $fableRefreshSeconds = 600; $fableMaxStale = 86400 }
 }
-$fableCache = Join-Path $cacheRoot 'braisenly-statusline/fable.json'
+# Labels, bar widths and segment order, as in the Bash renderer ($cfg is $null when the file is absent or invalid).
+$L = @{ context = 'ctx'; disk = 'disk'; tmp = '/tmp'; five_hour = '5h'; seven_day = '7d'; fable = 'Fable' }
+$Wd = @{ context = 12; disk = 12; tmp = 15; five_hour = 12; seven_day = 12; fable = 12 }
+$segList = @('model', 'profile', 'cwd', 'context', 'disk', 'tmp', 'five_hour', 'seven_day', 'fable')
+if ($cfg) {
+    if ($cfg.labels) { foreach ($p in $cfg.labels.PSObject.Properties) { $L[$p.Name] = [string]$p.Value } }
+    if ($cfg.widths) { foreach ($p in $cfg.widths.PSObject.Properties) { $Wd[$p.Name] = [int]$p.Value } }
+    if ($null -ne $cfg.segments) { $segList = @($cfg.segments) }
+}
+$fableLabel = $L['fable']; $fableWidth = $Wd['fable']
+$profileName = $env:CLAUDE_PROFILE
+if (-not $profileName -and $env:CLAUDE_CONFIG_DIR) {
+    $leaf = Split-Path -Leaf $env:CLAUDE_CONFIG_DIR
+    if ($leaf.StartsWith('.claude-')) { $profileName = $leaf.Substring('.claude-'.Length) }
+}
+$fableCache = Join-Path $cacheRoot 'claude-statusline/fable.json'
 
 function Get-OAuthToken {
     if ($env:CLAUDE_CODE_OAUTH_TOKEN) { return $env:CLAUDE_CODE_OAUTH_TOKEN }
@@ -106,11 +137,11 @@ function Refresh-Fable {
         if ((Get-NextRefresh) -gt $now) { return }
         # Claim the slot before the request so a failure backs off instead of retrying on every render.
         Set-Content -LiteralPath $nextRefreshFile -Value ($now + $fableRefreshSeconds) -NoNewline
-        $response = Invoke-RestMethod -Uri ($env:BRAISENLY_STATUSLINE_USAGE_URL ?? 'https://api.anthropic.com/api/oauth/usage') -Headers @{
+        $response = Invoke-RestMethod -Uri ($env:CLAUDE_STATUSLINE_USAGE_URL ?? 'https://api.anthropic.com/api/oauth/usage') -Headers @{
             Authorization = "Bearer $token"
             'anthropic-beta' = 'oauth-2025-04-20'
             Accept = 'application/json'
-            'User-Agent' = 'claude-code/braisenly-statusline'
+            'User-Agent' = 'claude-code/claude-statusline'
         } -TimeoutSec 8
         $limits = if ($response.limits) { $response.limits } elseif ($response.cachedUsageUtilization.utilization.limits) { $response.cachedUsageUtilization.utilization.limits } else { @() }
         $limit = @($limits | Where-Object {
@@ -143,7 +174,7 @@ if (Test-Path -LiteralPath $fableCache) {
     } catch { }
 }
 
-if (-not $env:BRAISENLY_STATUSLINE_DISABLE_REFRESH) {
+if (-not $env:CLAUDE_STATUSLINE_DISABLE_REFRESH) {
     if ((Get-NextRefresh) -le [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) {
         Start-Process -FilePath 'pwsh' -ArgumentList "-NoProfile -NonInteractive -File `"$PSCommandPath`" -RefreshFable" -WindowStyle Hidden
     }
@@ -151,7 +182,7 @@ if (-not $env:BRAISENLY_STATUSLINE_DISABLE_REFRESH) {
 
 # One resize watcher per Claude Code process: walk up the parent chain to claude, lock on its pid.
 # Opt-in: the watcher rewrites settings.json on resize, so it is off unless fit.resize_watch is true.
-if ($resizeWatch -and -not $env:BRAISENLY_STATUSLINE_DISABLE_WATCH) {
+if ($resizeWatch -and -not $env:CLAUDE_STATUSLINE_DISABLE_WATCH) {
     try {
         $proc = Get-Process -Id $PID
         for ($i = 0; $i -lt 6 -and $proc; $i++) {
@@ -160,7 +191,7 @@ if ($resizeWatch -and -not $env:BRAISENLY_STATUSLINE_DISABLE_WATCH) {
             $proc = if ($parentId) { Get-Process -Id $parentId -ErrorAction SilentlyContinue } else { $null }
         }
         if ($proc -and $proc.ProcessName -like 'claude*') {
-            $watchDir = Join-Path $cacheRoot 'braisenly-statusline'
+            $watchDir = Join-Path $cacheRoot 'claude-statusline'
             New-Item -ItemType Directory -Force -Path $watchDir | Out-Null
             $lock = Join-Path $watchDir "resize-watch.$($proc.Id).pid"
             # Two overlapping renders must not both spawn: the directory create is the atomic mutex around check-and-spawn.
@@ -190,9 +221,13 @@ $C_LABEL = "$ESC[38;5;240m"             # dim gray labels
 $C_SEP   = "$ESC[38;5;237m"             # separator pipe
 $C_VAL   = "$ESC[38;5;243m"             # dim value text
 $C_EMPTY = "$ESC[38;5;59m"              # medium gray empty cells
+# NO_COLOR (https://no-color.org): plain text, as in the Bash renderer.
+$noColor = [bool]$env:NO_COLOR
+if ($noColor) { $R = ''; $C_MODEL = ''; $C_LABEL = ''; $C_SEP = ''; $C_VAL = ''; $C_EMPTY = '' }
 
 
 function Get-CellColor([int]$pos) {
+    if ($noColor) { return '' }
     if ($pos -le 50) {
         $r = 40  + [int](180 * $pos / 50)
         $g = 170 - [int](10  * $pos / 50)
@@ -334,38 +369,39 @@ function Add-Bar([string]$top, [string]$bar) { if ($bar) { return ($top ? "$top 
 function Build {
     $script:segTop = [System.Collections.Generic.List[string]]::new()
     $script:segBot = [System.Collections.Generic.List[string]]::new()
-    $segments = @('model', 'cwd', 'context', 'disk', 'tmp', 'five_hour', 'seven_day', 'fable')
-    foreach ($s in $segments) {
+    foreach ($s in $segList) {
         $top = ''; $bot = ''
         switch ($s) {
             'model' { $top = "${C_MODEL}${model}${R}" }
+            'profile' { if ($profileName) { $top = "${C_LABEL}prof${R} ${C_VAL}${profileName}${R}" } }
             'cwd'   { $top = "${C_VAL}${cwdText}${R}" }
             'context' {
-                if (-not $F['ctx_label']) { $top = "${C_LABEL}ctx${R}" }
+                if (-not $F['ctx_label']) { $top = "${C_LABEL}$($L['context'])${R}" }
                 if ($null -ne $ctxPct) {
-                    $top = Add-Bar $top (Get-FitBar $ctxPct 12)
+                    $top = Add-Bar $top (Get-FitBar $ctxPct $Wd['context'])
                     $used = $F['ctx_int'] ? $ctxUsed0 : $ctxUsed1; $total = $F['ctx_int'] ? $ctxTotal0 : $ctxTotal1
                     if (-not $F['ctx_no_used']) { $bot = "${C_VAL}${used}${R}" }
                     if (-not $F['ctx_no_total']) { $bot += "${C_VAL}$($bot ? '/' : '')${total}${R}" }
                     $bot += ($bot ? ' ' : '') + (Get-Paren (Format-PctText $ctxPct))
-                } else { $top = Add-Bar $top (Get-FitBar 0 12) }
+                } else { $top = Add-Bar $top (Get-FitBar 0 $Wd['context']) }
             }
             { $_ -in 'disk', 'tmp' } {
-                if ($s -eq 'disk') { $pct = $diskPct; $free1 = $diskFree1; $free0 = $diskFree0; $L = 'disk'; $W = 12 } else { $pct = $tmpPct; $free1 = $tmpFree1; $free0 = $tmpFree0; $L = '/tmp'; $W = 15 }
+                if ($s -eq 'disk') { $pct = $diskPct; $free1 = $diskFree1; $free0 = $diskFree0 } else { $pct = $tmpPct; $free1 = $tmpFree1; $free0 = $tmpFree0 }
+                $lab = $L[$s]; $W = $Wd[$s]
                 if ($null -eq $pct) { continue }
-                if (-not $F['disk_label']) { $top = "${C_LABEL}${L}${R}" }
+                if (-not $F['disk_label']) { $top = "${C_LABEL}${lab}${R}" }
                 $top = Add-Bar $top (Get-FitBar $pct $W)
                 if (-not $F['disk_value']) { $bot = "${C_VAL}$($F['disk_int'] ? $free0 : $free1)${R}"; if (-not $F['no_free']) { $bot += ' free' } }
             }
             'five_hour' {
                 if ($null -eq $fivePct -or $F['five_segment']) { continue }
-                if (-not $F['five_label']) { $top = "${C_LABEL}5h${R}" }
-                $top = Add-Bar $top (Get-FitBar $fivePct 12); $bot = Get-Paren (Format-PctText $fivePct)
+                if (-not $F['five_label']) { $top = "${C_LABEL}$($L['five_hour'])${R}" }
+                $top = Add-Bar $top (Get-FitBar $fivePct $Wd['five_hour']); $bot = Get-Paren (Format-PctText $fivePct)
             }
             'seven_day' {
                 if ($null -eq $sevenPct -or $F['seven_segment']) { continue }
-                if (-not $F['seven_label']) { $top = "${C_LABEL}7d${R}" }
-                $top = Add-Bar $top (Get-FitBar $sevenPct 12); $bot = Get-Paren (Format-PctText $sevenPct)
+                if (-not $F['seven_label']) { $top = "${C_LABEL}$($L['seven_day'])${R}" }
+                $top = Add-Bar $top (Get-FitBar $sevenPct $Wd['seven_day']); $bot = Get-Paren (Format-PctText $sevenPct)
             }
             'fable' {
                 if ($F['fable_segment']) { continue }
@@ -409,12 +445,22 @@ if ($env:COLUMNS -match '^\d+$') { $columns = [int]$env:COLUMNS }
 # Native Windows without COLUMNS: the attached console's visible width (0 when no console is attached).
 if ($columns -le 0) { try { $columns = [Console]::WindowWidth } catch { $columns = 0 } }
 if ($columns -le 0) { Build; Assemble-Flat; Emit }
-$budget = [math]::Max(1, $columns - 3 - $fitReserve)
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'config/constants.ps1')
+$budget = [math]::Max(1, $columns - $STATUS_LINE_AREA_HORIZONTAL_MARGIN_CELLS - $fitReserve)
 # Stage 1: full bars.
 if (Try-Layouts) { Emit }
 # Stage 2: shrink bars uniformly. Walk the shared ratio down one cell at a time (stacked cells are bounded by their
 # value row, so a bar cell does not always buy a column) and stop at the first ratio that fits or breaks the floor.
-$widths = @(12); if ($null -ne $diskPct) { $widths += 12 }; if ($null -ne $tmpPct) { $widths += 15 }; if ($null -ne $fivePct) { $widths += 12 }; if ($null -ne $sevenPct) { $widths += 12 }; $widths += $fableWidth
+$widths = @(foreach ($s in $segList) {
+    switch ($s) {
+        'context' { $Wd['context'] }
+        'disk' { if ($null -ne $diskPct) { $Wd['disk'] } }
+        'tmp' { if ($null -ne $tmpPct) { $Wd['tmp'] } }
+        'five_hour' { if ($null -ne $fivePct) { $Wd['five_hour'] } }
+        'seven_day' { if ($null -ne $sevenPct) { $Wd['seven_day'] } }
+        'fable' { $Wd['fable'] }
+    }
+})
 $total = ($widths | Measure-Object -Sum).Sum
 # Largest shared ratio in [floor, full] whose layout fits; fits is monotonic in the ratio, so binary search.
 function Shrink-Layout([string]$layout) {
