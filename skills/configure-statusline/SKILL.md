@@ -11,10 +11,10 @@ Operate on the active profile only: `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`. Prese
 ## Install
 
 1. Resolve this skill's plugin root by walking up from `skills/configure-statusline`.
-2. Confirm `scripts/statusline-dispatcher.sh` exists.
-3. Update `settings.json` atomically with `jq`, setting `statusLine` to command `bash <absolute-plugin-root>/scripts/statusline-dispatcher.sh`. Treat legacy `bash ~/.claude/statusline-dispatcher.sh` as Braisenly-owned and safe to migrate.
-4. Enable `braisenly-statusline@dot-agents` when the active settings manage plugins.
-5. Do not copy renderer scripts outside the plugin.
+2. Run the installer from that root: `bash <plugin-root>/scripts/install.sh` on macOS/Linux, `pwsh -NoProfile -File <plugin-root>/scripts/install.ps1` on Windows. Pass `--force` / `-Force` only when the user explicitly asks to replace a non-Braisenly command.
+3. The installer copies the stable launcher to `<config-dir>/braisenly-statusline/` and points `statusLine` at it. The launcher finds the installed plugin version on every render, so plugin updates need no settings edit. It also enables `braisenly-statusline@braisenly-statusline`.
+4. Commands pointing at a `braisenly-statusline` clone, an older plugin cache path, or legacy `bash ~/.claude/statusline-dispatcher.sh` are Braisenly-owned and safe to migrate.
+5. Do not copy renderer scripts outside the plugin; only the launcher lives outside it.
 
 ## Configure
 
