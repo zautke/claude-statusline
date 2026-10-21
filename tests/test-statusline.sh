@@ -169,7 +169,7 @@ expect_step() { # $1 step, $2 expected floor output
 }
 t=${base//(/}; t=${t//)/}
 expect_step disk_label "${base//disk /}"
-expect_step ctx_int "${base//\/195.3K/\/195K}"
+expect_step ctx_int "${base//\/195.3K//195K}"
 expect_step no_parens "$t"
 expect_step ctx_no_total "${base//\/195.3K/}"
 expect_step no_free "${base// free/}"

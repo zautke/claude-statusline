@@ -1,6 +1,6 @@
 {
   "name": "claude-statusline",
-  "version": "1.1.0.6-feat-coalesce-plugin-copies",
+  "version": "1.1.0.7-feat-coalesce-plugin-copies",
   "description": "Configurable Claude Code status line with native limits, Fable usage, system health, terminal-width fitting, optional resize refit, drift controls, and cross-platform renderers.",
   "author": {
     "name": "Luke Zautke",
