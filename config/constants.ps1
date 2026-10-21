@@ -19,3 +19,8 @@ $OWNED_COMMAND_CLAUDE_OR_LEGACY_BRAISENLY_STATUSLINE_SCRIPTS_DISPATCHER_COMMAND_
 
 # Installer guard: a statusLine.command mentioning this plugin, current or legacy name, is ours to replace.
 $OWNED_COMMAND_MENTIONS_CLAUDE_OR_LEGACY_BRAISENLY_STATUSLINE = '(claude|braisenly)-statusline'
+
+# Claude Code draws the status line 2 cells in from each terminal edge, so it shows COLUMNS - 4 cells
+# (measured 2026-10-20 on Claude Code 2.1.306: a 52-column window shows 48 cells; a row padded to
+# COLUMNS - 3 was cut with an ellipsis). The fit budget is COLUMNS minus this margin minus fit.reserve.
+$STATUS_LINE_AREA_HORIZONTAL_MARGIN_CELLS = 4

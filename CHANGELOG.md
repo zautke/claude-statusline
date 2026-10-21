@@ -16,6 +16,12 @@ and each merge into `development` adds an entry to `changeset.md`.
 - `statusLine.command` now points at a stable launcher in `<config-dir>/claude-statusline/`, copied there by `install.{sh,ps1}`. On every render it runs the installed plugin version, so updates reach the status line without a settings edit. If the plugin is not installed it prints `claude-statusline: not installed` and exits 0.
 - Brought in `/drift-control` (command, scripts, Textual menu, tmux popup) from the marketplace copies. Its scripts resolve their siblings from their own directory instead of `~/.claude/scripts`. Rubric edits go to `~/.claude/state/drift/rubric.md`, which survives updates.
 - Added `drift-control.ps1`, a PowerShell twin of `drift-control.sh` with the same arguments and output, so `/drift-control` runs on Windows without bash. Both twins gained `-n|--recent <N>`. The command runs the PowerShell twin on Windows and the bash twin elsewhere.
+### Fixed
+
+- The fit budget is now `COLUMNS - 4 - fit.reserve` (was `- 3`). Claude Code draws the status line 2 cells in from each edge, so a row padded to `COLUMNS - 3` overflowed by one cell and was cut with an ellipsis. Found live on Claude Code 2.1.306: a 52-column window shows 48 cells. The margin is the named constant `STATUS_LINE_AREA_HORIZONTAL_MARGIN_CELLS`.
+
+### Changed (continued)
+
 - Identity and regex constants live in `config/` (`identity.env`, `constants.{sh,ps1}`).
 
 ## [1.1.0] — 2026-10-16

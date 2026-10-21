@@ -282,7 +282,9 @@ try_layouts() { build; assemble_flat; fits&&return 0; if ((fit_rows>=2)); then a
 pad_rows() { cells "$row1"; ((N<budget))&&printf -v _p '%*s' $((budget-N)) ''&&row1+=$_p; if [[ -n $row2 ]]; then cells "$row2"; ((N<budget))&&printf -v _p '%*s' $((budget-N)) ''&&row2+=$_p; fi; }
 
 if ! [[ ${COLUMNS:-} =~ ^[0-9]+$ ]] || ((COLUMNS<=0)); then build; assemble_flat; emit; fi
-budget=$((COLUMNS-3-fit_reserve)); ((budget<1))&&budget=1
+# shellcheck source=../config/constants.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/config/constants.sh"
+budget=$((COLUMNS-STATUS_LINE_AREA_HORIZONTAL_MARGIN_CELLS-fit_reserve)); ((budget<1))&&budget=1
 # Stage 1: full bars.
 try_layouts&&emit
 # Stage 2: shrink bars uniformly. Walk the shared ratio down one cell at a time (stacked cells are bounded by their

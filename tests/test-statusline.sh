@@ -59,7 +59,8 @@ fallback=$(printf '%s' "$payload" | NO_COLOR=1 CLAUDE_STATUSLINE_DISABLE_REFRESH
 }
 [[ "$fallback" != *"drift"* ]] || { printf 'drift segment still rendered\n' >&2; exit 1; }
 
-# Terminal fit: budget is COLUMNS-3. Helpers count display cells per row.
+# Terminal fit: budget is COLUMNS minus Claude Code's status-area margin. Helpers count display cells per row.
+. "$ROOT/config/constants.sh"; margin=$STATUS_LINE_AREA_HORIZONTAL_MARGIN_CELLS
 cells() { sed $'s/\x1b\\[[0-9;]*m//g' <<<"$1" | jq -Rr length; }
 render() { printf '%s' "$payload" | COLUMNS=$1 NO_COLOR=1 CLAUDE_STATUSLINE_DISABLE_REFRESH=1 ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh"; }
 rows() { printf '%s\n' "$1" | wc -l | tr -d ' '; }
@@ -76,7 +77,7 @@ mask() { sed -E 's/[0-9.]+[KMG] free/N free/' <<<"$1"; }
 full_cells=$(cells "$fallback")
 # Stacked (opt-in rows:2): a width that fits two rows at full bars but not one row. Separators align, bars untouched.
 printf '{"fit":{"rows":2}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
-stk=$(render $((full_cells-10+3)))
+stk=$(render $((full_cells-10+margin)))
 [[ $(rows "$stk") -eq 2 ]] || { printf 'expected stacked layout, got %s rows\n' "$(rows "$stk")" >&2; exit 1; }
 assert_fit stacked "$stk" $((full_cells-10))
 r1=$(row "$stk" 1); r2=$(row "$stk" 2)
@@ -86,21 +87,21 @@ pos1=${r1%%●*}; pos2=${r2%%●*}
 [[ "$r2" == *"1000B/195.3K (25%)"* ]] || { printf 'stacked bottom row lost ctx values: %s\n' "$r2" >&2; exit 1; }
 stk_cells=$(cells "$r1")
 # Shrink: just under the stacked width, bars shrink but stay >= 5 and rows are padded to the budget.
-shr=$(render $((stk_cells-6+3)))
+shr=$(render $((stk_cells-6+margin)))
 assert_fit shrink "$shr" $((stk_cells-6))
 [[ $(cells "$(row "$shr" 1)") -eq $((stk_cells-6)) ]] || { printf 'shrunk rows not padded to budget\n' >&2; exit 1; }
 ctxbar=${shr#*ctx [}; ctxbar=${ctxbar%%]*}
 [[ ${#ctxbar} -lt 12 && ${#ctxbar} -ge 5 ]] || { printf 'ctx bar not shrunk into range: %s\n' "${#ctxbar}" >&2; exit 1; }
 # Two rows keep the bars: at 90 columns the ladder has engaged (parentheses gone) but every bar is still drawn, >= 5 cells.
 lad=$(render 90)
-assert_fit ladder90 "$lad" 87
+assert_fit ladder90 "$lad" $((90-margin))
 [[ $(rows "$lad") -eq 2 && "$lad" == *"["* ]] || { printf 'bars dropped at 90 despite two rows: %s\n' "$lad" >&2; exit 1; }
 fivebar=${lad#*five [}; fivebar=${fivebar%%]*}; [[ ${#fivebar} -ge 5 ]] || { printf 'bar below floor at 90\n' >&2; exit 1; }
 [[ "$(row "$lad" 1)" == ⠀* || "$(row "$lad" 2)" == ⠀* ]] || { printf 'row leading pad is plain whitespace (Claude Code trims it)\n' >&2; exit 1; }
 # Single row (default): bars drop first, then the ladder. At 60 columns parentheses and Fable are gone.
 printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
 lad60=$(render 60)
-assert_fit ladder60 "$lad60" 57
+assert_fit ladder60 "$lad60" $((60-margin))
 [[ "$lad60" != *"["* && "$lad60" != *"("* ]] || { printf 'bars or parentheses survived at 60 single-row: %s\n' "$lad60" >&2; exit 1; }
 [[ "$lad60" == *"25%"* ]] || { printf 'ctx percentage dropped at 60: %s\n' "$lad60" >&2; exit 1; }
 # Ladder order: the Fable segment leaves before 7d and 5h do, so if 7d or 5h is gone Fable must be gone too.
@@ -108,24 +109,24 @@ if [[ "$lad60" != *"30%"* || "$lad60" != *"20%"* ]]; then [[ "$lad60" != *"n/a"*
 printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
 # A bar configured below the floor must not block shrinking of the others.
 printf '{"widths":{"fable":3},"fit":{"rows":1}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
-small=$(render $((full_cells-9-20+3)))
+small=$(render $((full_cells-9-20+margin)))
 [[ "$small" == *"ctx ["* ]] || { printf 'sub-floor bar blocked shrinking: %s\n' "$small" >&2; exit 1; }
 # Wide glyphs: a CJK label counts two cells each, so the fitted row stays within budget by display width.
 printf '{"labels":{"five_hour":"五時間"},"fit":{"rows":1}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
 wide=$(render 120)
 wcells=$(python3 -c 'import sys,unicodedata; s=sys.stdin.read().rstrip("\n"); print(sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in s))' <<<"$wide" 2>/dev/null || cells "$wide")
-[[ $wcells -le 117 ]] || { printf 'wide label overflowed by display width: %s\n' "$wcells" >&2; exit 1; }
+[[ $wcells -le $((120-margin)) ]] || { printf 'wide label overflowed by display width: %s\n' "$wcells" >&2; exit 1; }
 [[ "$wide" == *"五時間"* ]] || { printf 'wide label missing\n' >&2; exit 1; }
 # Floor: 30 columns must not crash and must emit at most 2 rows.
 flr=$(render 30); [[ $(rows "$flr") -le 2 ]] || { printf 'floor emitted too many rows\n' >&2; exit 1; }
 # Default (rows:1) never stacks.
 printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
-one=$(render $((full_cells-10+3)))
+one=$(render $((full_cells-10+margin)))
 [[ $(rows "$one") -eq 1 ]] || { printf 'fit.rows=1 still stacked\n' >&2; exit 1; }
 assert_fit rows1 "$one" $((full_cells-10))
 # Reserve shrinks the budget.
 printf '{"fit":{"reserve":20,"rows":1}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
-res=$(render $((full_cells-10+3+20)))
+res=$(render $((full_cells-10+margin+20)))
 assert_fit reserve "$res" $((full_cells-10))
 [[ "$res" != "$fallback" ]] || { printf 'reserve not applied\n' >&2; exit 1; }
 # Custom ladder: only ctx_label, so at 90 the ctx label goes and nothing else is touched.

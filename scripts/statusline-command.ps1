@@ -409,7 +409,8 @@ if ($env:COLUMNS -match '^\d+$') { $columns = [int]$env:COLUMNS }
 # Native Windows without COLUMNS: the attached console's visible width (0 when no console is attached).
 if ($columns -le 0) { try { $columns = [Console]::WindowWidth } catch { $columns = 0 } }
 if ($columns -le 0) { Build; Assemble-Flat; Emit }
-$budget = [math]::Max(1, $columns - 3 - $fitReserve)
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'config/constants.ps1')
+$budget = [math]::Max(1, $columns - $STATUS_LINE_AREA_HORIZONTAL_MARGIN_CELLS - $fitReserve)
 # Stage 1: full bars.
 if (Try-Layouts) { Emit }
 # Stage 2: shrink bars uniformly. Walk the shared ratio down one cell at a time (stacked cells are bounded by their
