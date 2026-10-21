@@ -1,25 +1,25 @@
-# Braisenly Status Line
+# Claude Status Line
 
 Claude Code plugin with configurable Bash and PowerShell status-line renderers, a configuration skill, and the `/drift-control` menu. This repository is the plugin's only source and its own marketplace.
 
 ## Install
 
 ```bash
-claude plugin marketplace add zautke/braisenly-statusline
-claude plugin install braisenly-statusline@braisenly-statusline
+claude plugin marketplace add zautke/claude-statusline
+claude plugin install claude-statusline@claude-statusline
 ```
 
 Then point the status line at the stable launcher. Run the installer from the installed plugin, or ask the `configure-statusline` skill to install it:
 
 ```bash
-bash ~/.claude/plugins/cache/braisenly-statusline/braisenly-statusline/*/scripts/install.sh   # macOS / Linux
+bash ~/.claude/plugins/cache/claude-statusline/claude-statusline/*/scripts/install.sh   # macOS / Linux
 ```
 
 ```powershell
-pwsh -NoProfile -File (Resolve-Path "$HOME\.claude\plugins\cache\braisenly-statusline\braisenly-statusline\*\scripts\install.ps1")   # Windows
+pwsh -NoProfile -File (Resolve-Path "$HOME\.claude\plugins\cache\claude-statusline\claude-statusline\*\scripts\install.ps1")   # Windows
 ```
 
-The installer copies a small launcher to `~/.claude/braisenly-statusline/` and sets `statusLine.command` to it. On each render the launcher reads `installed_plugins.json` and runs the installed version's renderer, so `claude plugin update` reaches the status line without another settings edit. If the plugin is not installed, the status line shows `braisenly-statusline: not installed`.
+The installer copies a small launcher to `~/.claude/claude-statusline/` and sets `statusLine.command` to it. On each render the launcher reads `installed_plugins.json` and runs the installed version's renderer, so `claude plugin update` reaches the status line without another settings edit. If the plugin is not installed, the status line shows `claude-statusline: not installed`.
 
 ## Configure
 

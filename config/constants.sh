@@ -14,5 +14,9 @@ SESSION_ID_ONLY_LETTERS_DIGITS_DOT_UNDERSCORE_HYPHEN='^[A-Za-z0-9._-]+$'
 # Count argument such as --recent 10.
 NON_NEGATIVE_INTEGER_DIGITS_ONLY='^[0-9]+$'
 
-# A statusLine.command this plugin owns: one of its renderer, dispatcher or launcher scripts.
-OWNED_COMMAND_BRAISENLY_STATUSLINE_SCRIPTS_DISPATCHER_COMMAND_OR_LAUNCH='braisenly-statusline[\\/]scripts[\\/]statusline-(dispatcher|command|launch)\.(sh|ps1)'
+# A statusLine.command this plugin owns: one of its renderer, dispatcher or launcher scripts, under the
+# current name or the legacy braisenly-statusline name (so old installs migrate).
+OWNED_COMMAND_CLAUDE_OR_LEGACY_BRAISENLY_STATUSLINE_SCRIPTS_DISPATCHER_COMMAND_OR_LAUNCH='(claude|braisenly)-statusline[\\/]scripts[\\/]statusline-(dispatcher|command|launch)\.(sh|ps1)'
+
+# Installer guard: a statusLine.command mentioning this plugin, current or legacy name, is ours to replace.
+OWNED_COMMAND_MENTIONS_CLAUDE_OR_LEGACY_BRAISENLY_STATUSLINE='(claude|braisenly)-statusline'

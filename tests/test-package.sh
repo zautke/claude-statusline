@@ -26,20 +26,11 @@ jq -e --arg n "$PLUGIN_NAME" '.name==$n' "$plugin/.claude-plugin/plugin.json" >/
 stamp_ok "$(jq -r .version "$plugin/.claude-plugin/plugin.json")" || fail 'plugin.json version is not MAJOR.MINOR.PATCH.BUILD-<branch>'
 jq -e --arg m "$MARKETPLACE" --arg n "$PLUGIN_NAME" '.name==$m and (.plugins|length)==1 and .plugins[0].name==$n and .plugins[0].source=="."' \
   "$plugin/.claude-plugin/marketplace.json" >/dev/null || fail 'marketplace.json identity'
-# Every client manifest carries the Claude manifest's identity fields unchanged; the Agent
-# Plugins root manifest pins the 1.0.0 schema.
-identity='{name,version,description,author,license,keywords}'
-want=$(jq -cS "$identity" "$plugin/.claude-plugin/plugin.json")
-for m in plugin.json .codex-plugin/plugin.json .github/plugin/plugin.json; do
-  [[ $(jq -cS "$identity" "$plugin/$m") == "$want" ]] || fail "$m identity differs from .claude-plugin/plugin.json"
-done
-jq -e '."$schema"=="https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"' "$plugin/plugin.json" >/dev/null || fail 'plugin.json $schema'
-jq -e --arg m "$MARKETPLACE" --arg n "$PLUGIN_NAME" '.name==$m and .plugins[0].name==$n and .plugins[0].source=={source:"local",path:"./"}' \
-  "$plugin/.agents/plugins/marketplace.json" >/dev/null || fail 'codex marketplace identity'
-jq -e --arg m "$MARKETPLACE" --arg n "$PLUGIN_NAME" '.name==$m and .plugins[0].name==$n and .plugins[0].source=="."' \
-  "$plugin/.github/plugin/marketplace.json" >/dev/null || fail 'copilot marketplace identity'
 jq -e '.skill_name=="configure-statusline" and (.evals|length)==4' "$plugin/skills/configure-statusline/evals/evals.json" >/dev/null || fail 'skill evals'
-jq empty "$plugin/interface.json" || fail 'interface.json'
+# Claude Code only: no other client's manifests ship.
+for m in plugin.json .codex-plugin .github/plugin .agents/plugins interface.json; do
+  [[ ! -e $plugin/$m ]] || fail "non-Claude manifest present: $m"
+done
 for s in statusline-command statusline-launch install; do
   [[ $(head -n 1 "$plugin/scripts/$s.sh") == '#!/usr/bin/env bash' ]] || fail "$s.sh shebang"
   [[ $(head -n 1 "$plugin/scripts/$s.ps1") == '#!/usr/bin/env pwsh' ]] || fail "$s.ps1 shebang"
@@ -64,11 +55,13 @@ before=$(cksum <"$profile/settings.json")
 bash "$plugin/scripts/install.sh" --config-dir "$profile" >/dev/null
 [[ $(cksum <"$profile/settings.json") == "$before" ]] || fail 'install not idempotent'
 
-# Migration: legacy Braisenly commands (stale clone on adagio, old cache path, nonce) are taken over.
+# Migration: commands under the legacy braisenly-statusline name (stale clone on adagio, old
+# cache path, nonce, the launcher under its first name) are taken over.
 for legacy in \
   'pwsh -NoProfile -NonInteractive -File "C:\Users\me\braisenly-statusline\scripts\statusline-command.ps1"' \
   'bash ~/braisenly-statusline/scripts/statusline-dispatcher.sh # bsl-cols=120' \
-  'bash /x/.claude/plugins/cache/braisenly/braisenly-statusline/1.1.0/scripts/statusline-dispatcher.sh'; do
+  'bash /x/.claude/plugins/cache/braisenly/braisenly-statusline/1.1.0/scripts/statusline-dispatcher.sh' \
+  'pwsh -NoProfile -NonInteractive -File "C:\Users\me\.claude\braisenly-statusline\scripts\statusline-launch.ps1"'; do
   jq --arg c "$legacy" '.statusLine.command=$c' "$profile/settings.json" >"$temp/s" && mv "$temp/s" "$profile/settings.json"
   bash "$plugin/scripts/install.sh" --config-dir "$profile" >/dev/null || fail "migration refused: $legacy"
   jq -e --arg cmd "bash $launcher" '.statusLine.command==$cmd' "$profile/settings.json" >/dev/null || fail "migration: $legacy"

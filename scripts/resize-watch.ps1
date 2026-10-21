@@ -56,9 +56,9 @@ function Set-Nonce([int]$cols) {
         $before = Get-Digest $Settings
         $cfg = Get-Content -LiteralPath $Settings -Raw | ConvertFrom-Json
         $cmd = [string]$cfg.statusLine.command
-        # Only a Braisenly-owned statusLine command gets a nonce; if the user switched or removed it, this watcher is done.
+        # Only a claude-statusline-owned statusLine command gets a nonce; if the user switched or removed it, this watcher is done.
         $bare = $cmd -replace $NONCE_SUFFIX_SPACE_HASH_BSL_COLS_EQUALS_DIGITS_AT_END, ''
-        if ($bare -notmatch $OWNED_COMMAND_BRAISENLY_STATUSLINE_SCRIPTS_DISPATCHER_COMMAND_OR_LAUNCH -and $bare -ne 'bash ~/.claude/statusline-dispatcher.sh') { exit 0 }
+        if ($bare -notmatch $OWNED_COMMAND_CLAUDE_OR_LEGACY_BRAISENLY_STATUSLINE_SCRIPTS_DISPATCHER_COMMAND_OR_LAUNCH -and $bare -ne 'bash ~/.claude/statusline-dispatcher.sh') { exit 0 }
         $keysBefore = ($cfg.PSObject.Properties.Name | Sort-Object) -join ','
         $cfg.statusLine.command = $bare + " # bsl-cols=$cols"
         $tmp = "$Settings.tmp.$PID"

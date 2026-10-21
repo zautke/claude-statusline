@@ -1,14 +1,14 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "braisenly-statusline",
-  "description": "Braisenly status line for Claude Code: native limits, Fable usage, system health, terminal fitting and drift controls.",
+  "name": "claude-statusline",
+  "description": "Claude status line for Claude Code: native limits, Fable usage, system health, terminal fitting and drift controls.",
   "owner": {
     "name": "Luke Zautke",
     "url": "https://github.com/zautke"
   },
   "plugins": [
     {
-      "name": "braisenly-statusline",
+      "name": "claude-statusline",
       "description": "Configurable Claude Code status line with native limits, Fable usage, system health, terminal-width fitting, optional resize refit, drift controls, and cross-platform renderers.",
       "source": ".",
       "category": "productivity"

@@ -22,6 +22,21 @@ try {
     if (-not $settings.enabledPlugins[$id.PLUGIN_ID]) { Fail 'plugin not enabled' }
     if ($settings.statusLine.command -ne "pwsh -NoProfile -NonInteractive -File `"$launcher`"") { Fail "statusLine command: $($settings.statusLine.command)" }
 
+    # Migration: a command under the legacy braisenly-statusline name is taken over; an unrelated one is refused.
+    $want = $settings.statusLine.command
+    foreach ($legacy in 'pwsh -NoProfile -NonInteractive -File "C:\Users\me\.claude\braisenly-statusline\scripts\statusline-launch.ps1" # bsl-cols=90',
+                        'pwsh -NoProfile -NonInteractive -File "C:\Users\me\braisenly-statusline\scripts\statusline-command.ps1"') {
+        $settings.statusLine.command = $legacy
+        $settings | ConvertTo-Json -Depth 20 | Set-Content (Join-Path $profileDir 'settings.json')
+        & (Join-Path $plugin 'scripts/install.ps1') -ConfigDir $profileDir | Out-Null
+        $settings = Get-Content -Raw (Join-Path $profileDir 'settings.json') | ConvertFrom-Json -AsHashtable
+        if ($settings.statusLine.command -ne $want) { Fail "migration: $legacy" }
+    }
+    $settings.statusLine.command = 'echo mine'
+    $settings | ConvertTo-Json -Depth 20 | Set-Content (Join-Path $profileDir 'settings.json')
+    $err = pwsh -NoProfile -NonInteractive -File (Join-Path $plugin 'scripts/install.ps1') -ConfigDir $profileDir 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 1 -or $err.Trim() -ne 'Refusing to replace unrelated statusLine command: echo mine') { Fail "negative unrelated: rc=$LASTEXITCODE $err" }
+
     $pluginsDir = Join-Path $profileDir 'plugins'
     New-Item -ItemType Directory -Force $pluginsDir | Out-Null
     $state = Join-Path $pluginsDir 'installed_plugins.json'

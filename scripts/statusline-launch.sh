@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stable statusLine.command target. Lives in <config-dir>/braisenly-statusline/ (copied there by
+# Stable statusLine.command target. Lives in <config-dir>/claude-statusline/ (copied there by
 # install.sh), finds the installed plugin version in installed_plugins.json, and runs that
 # version's dispatcher, so plugin updates reach the status line without a settings edit.
 set -uo pipefail

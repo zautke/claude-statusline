@@ -1,19 +1,19 @@
 ---
 name: configure-statusline
-description: Configures, previews, resets, installs, or uninstalls the Braisenly Claude Code status line, including segment order, visibility, labels, indicator lengths, terminal fitting, and the resize watcher. Use for requests such as "make my Claude status bars shorter", "show Fable usage", or "make the status line fit my split pane".
+description: Configures, previews, resets, installs, or uninstalls the claude-statusline Claude Code status line, including segment order, visibility, labels, indicator lengths, terminal fitting, and the resize watcher. Use for requests such as "make my Claude status bars shorter", "show Fable usage", or "make the status line fit my split pane".
 compatibility: Requires bash and jq; Fable refresh additionally requires curl and Claude Code OAuth credentials.
 ---
 
 # Configure Claude Code Status Line
 
-Operate on the active profile only: `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`. Preserve unrelated settings and refuse to replace a non-Braisenly `statusLine.command` unless user explicitly requests force.
+Operate on the active profile only: `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`. Preserve unrelated settings and refuse to replace a non-claude-statusline `statusLine.command` unless user explicitly requests force.
 
 ## Install
 
 1. Resolve this skill's plugin root by walking up from `skills/configure-statusline`.
-2. Run the installer from that root: `bash <plugin-root>/scripts/install.sh` on macOS/Linux, `pwsh -NoProfile -File <plugin-root>/scripts/install.ps1` on Windows. Pass `--force` / `-Force` only when the user explicitly asks to replace a non-Braisenly command.
-3. The installer copies the stable launcher to `<config-dir>/braisenly-statusline/` and points `statusLine` at it. The launcher finds the installed plugin version on every render, so plugin updates need no settings edit. It also enables `braisenly-statusline@braisenly-statusline`.
-4. Commands pointing at a `braisenly-statusline` clone, an older plugin cache path, or legacy `bash ~/.claude/statusline-dispatcher.sh` are Braisenly-owned and safe to migrate.
+2. Run the installer from that root: `bash <plugin-root>/scripts/install.sh` on macOS/Linux, `pwsh -NoProfile -File <plugin-root>/scripts/install.ps1` on Windows. Pass `--force` / `-Force` only when the user explicitly asks to replace a non-claude-statusline command.
+3. The installer copies the stable launcher to `<config-dir>/claude-statusline/` and points `statusLine` at it. The launcher finds the installed plugin version on every render, so plugin updates need no settings edit. It also enables `claude-statusline@claude-statusline`.
+4. Commands pointing at a `claude-statusline` or legacy `braisenly-statusline` clone or plugin cache path, or legacy `bash ~/.claude/statusline-dispatcher.sh` are claude-statusline-owned and safe to migrate.
 5. Do not copy renderer scripts outside the plugin; only the launcher lives outside it.
 
 ## Configure
@@ -32,13 +32,13 @@ Report an exact validation error before changing invalid input. Keep existing va
 
 ## Resize watch
 
-Opt-in via `fit.resize_watch: true` (default off, because it rewrites `settings.json`). When enabled the renderer starts one `scripts/resize-watch.sh` (or `resize-watch.ps1`) per Claude Code process. It polls the Claude pty width every 250ms and, on change, after the width settles for 400ms appends ` # bsl-cols=<n>` to `statusLine.command` in the active profile's `settings.json`; a command change makes Claude Code re-run the status line at once, since terminal resize is not a native trigger. Writes go through a validated temp file and atomic rename, and are dropped if the file changed since it was read (a microsecond race with a concurrent Claude Code write remains); a one-time `settings.json.bsl-backup` is kept. The zero-write alternative is `statusLine.refreshInterval` in `settings.json`. Set `BRAISENLY_STATUSLINE_DISABLE_WATCH=1` to force it off. Treat the nonce suffix as Braisenly-owned when inspecting or migrating `statusLine.command`.
+Opt-in via `fit.resize_watch: true` (default off, because it rewrites `settings.json`). When enabled the renderer starts one `scripts/resize-watch.sh` (or `resize-watch.ps1`) per Claude Code process. It polls the Claude pty width every 250ms and, on change, after the width settles for 400ms appends ` # bsl-cols=<n>` to `statusLine.command` in the active profile's `settings.json`; a command change makes Claude Code re-run the status line at once, since terminal resize is not a native trigger. Writes go through a validated temp file and atomic rename, and are dropped if the file changed since it was read (a microsecond race with a concurrent Claude Code write remains); a one-time `settings.json.bsl-backup` is kept. The zero-write alternative is `statusLine.refreshInterval` in `settings.json`. Set `CLAUDE_STATUSLINE_DISABLE_WATCH=1` to force it off. Treat the nonce suffix as claude-statusline-owned when inspecting or migrating `statusLine.command`.
 
 ## Preview and verify
 
-Pipe representative Claude status JSON into `scripts/statusline-dispatcher.sh` with `BRAISENLY_STATUSLINE_DISABLE_REFRESH=1`. Show rendered line. Then run `bash tests/test-statusline.sh`.
+Pipe representative Claude status JSON into `scripts/statusline-dispatcher.sh` with `CLAUDE_STATUSLINE_DISABLE_REFRESH=1`. Show rendered line. Then run `bash tests/test-statusline.sh`.
 
 ## Reset or uninstall
 
 - Reset: remove only active profile's `statusline.json`; built-in defaults resume.
-- Uninstall: remove `statusLine` only when its command points to this plugin or legacy Braisenly dispatcher, remove active profile's `statusline.json`, and disable plugin entry. Preserve every unrelated setting.
+- Uninstall: remove `statusLine` only when its command points to this plugin or a legacy braisenly-statusline command, remove active profile's `statusline.json`, and disable plugin entry. Preserve every unrelated setting.

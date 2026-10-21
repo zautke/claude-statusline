@@ -68,7 +68,7 @@ if (Test-Path -LiteralPath $configPath) {
         if ($cfg.fable.max_stale_seconds) { $fableMaxStale = [int64]$cfg.fable.max_stale_seconds }
     } catch { $cfg = $null; $fableModel = 'Fable'; $fableLabel = 'Fable'; $fableWidth = 12; $fitReserve = 0; $minBarCells = 5; $resizeWatch = $false; $fableRefreshSeconds = 600; $fableMaxStale = 86400 }
 }
-$fableCache = Join-Path $cacheRoot 'braisenly-statusline/fable.json'
+$fableCache = Join-Path $cacheRoot 'claude-statusline/fable.json'
 
 function Get-OAuthToken {
     if ($env:CLAUDE_CODE_OAUTH_TOKEN) { return $env:CLAUDE_CODE_OAUTH_TOKEN }
@@ -106,11 +106,11 @@ function Refresh-Fable {
         if ((Get-NextRefresh) -gt $now) { return }
         # Claim the slot before the request so a failure backs off instead of retrying on every render.
         Set-Content -LiteralPath $nextRefreshFile -Value ($now + $fableRefreshSeconds) -NoNewline
-        $response = Invoke-RestMethod -Uri ($env:BRAISENLY_STATUSLINE_USAGE_URL ?? 'https://api.anthropic.com/api/oauth/usage') -Headers @{
+        $response = Invoke-RestMethod -Uri ($env:CLAUDE_STATUSLINE_USAGE_URL ?? 'https://api.anthropic.com/api/oauth/usage') -Headers @{
             Authorization = "Bearer $token"
             'anthropic-beta' = 'oauth-2025-04-20'
             Accept = 'application/json'
-            'User-Agent' = 'claude-code/braisenly-statusline'
+            'User-Agent' = 'claude-code/claude-statusline'
         } -TimeoutSec 8
         $limits = if ($response.limits) { $response.limits } elseif ($response.cachedUsageUtilization.utilization.limits) { $response.cachedUsageUtilization.utilization.limits } else { @() }
         $limit = @($limits | Where-Object {
@@ -143,7 +143,7 @@ if (Test-Path -LiteralPath $fableCache) {
     } catch { }
 }
 
-if (-not $env:BRAISENLY_STATUSLINE_DISABLE_REFRESH) {
+if (-not $env:CLAUDE_STATUSLINE_DISABLE_REFRESH) {
     if ((Get-NextRefresh) -le [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) {
         Start-Process -FilePath 'pwsh' -ArgumentList "-NoProfile -NonInteractive -File `"$PSCommandPath`" -RefreshFable" -WindowStyle Hidden
     }
@@ -151,7 +151,7 @@ if (-not $env:BRAISENLY_STATUSLINE_DISABLE_REFRESH) {
 
 # One resize watcher per Claude Code process: walk up the parent chain to claude, lock on its pid.
 # Opt-in: the watcher rewrites settings.json on resize, so it is off unless fit.resize_watch is true.
-if ($resizeWatch -and -not $env:BRAISENLY_STATUSLINE_DISABLE_WATCH) {
+if ($resizeWatch -and -not $env:CLAUDE_STATUSLINE_DISABLE_WATCH) {
     try {
         $proc = Get-Process -Id $PID
         for ($i = 0; $i -lt 6 -and $proc; $i++) {
@@ -160,7 +160,7 @@ if ($resizeWatch -and -not $env:BRAISENLY_STATUSLINE_DISABLE_WATCH) {
             $proc = if ($parentId) { Get-Process -Id $parentId -ErrorAction SilentlyContinue } else { $null }
         }
         if ($proc -and $proc.ProcessName -like 'claude*') {
-            $watchDir = Join-Path $cacheRoot 'braisenly-statusline'
+            $watchDir = Join-Path $cacheRoot 'claude-statusline'
             New-Item -ItemType Directory -Force -Path $watchDir | Out-Null
             $lock = Join-Path $watchDir "resize-watch.$($proc.Id).pid"
             # Two overlapping renders must not both spawn: the directory create is the atomic mutex around check-and-spawn.

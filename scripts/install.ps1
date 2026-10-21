@@ -9,7 +9,7 @@ function Usage {
     @'
 Usage: install.ps1 [-c|--config-dir DIR] [-f|--force] [-h|--help]
 
-Copies the stable launcher to DIR/braisenly-statusline/ and points statusLine at it, so
+Copies the stable launcher to DIR/claude-statusline/ and points statusLine at it, so
 plugin updates reach the status line without editing settings again.
 '@
 }
@@ -29,7 +29,7 @@ $settings = if (Test-Path -LiteralPath $settingsPath) {
 } else { [ordered]@{} }
 # Strip the resize watcher's nonce before the ownership check.
 $current = ([string]$settings.statusLine.command) -replace $NONCE_SUFFIX_SPACE_HASH_BSL_COLS_EQUALS_DIGITS_AT_END, ''
-if ($current -and $current -notmatch 'braisenly-statusline' -and $current -ne 'bash ~/.claude/statusline-dispatcher.sh' -and -not $Force) {
+if ($current -and $current -notmatch $OWNED_COMMAND_MENTIONS_CLAUDE_OR_LEGACY_BRAISENLY_STATUSLINE -and $current -ne 'bash ~/.claude/statusline-dispatcher.sh' -and -not $Force) {
     [Console]::Error.WriteLine("Refusing to replace unrelated statusLine command: $current")
     exit 1
 }
@@ -46,4 +46,4 @@ $settings.statusLine = [ordered]@{ type = 'command'; command = "pwsh -NoProfile 
 $tmp = "$settingsPath.tmp.$PID"
 $settings | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $tmp -Encoding utf8
 Move-Item -LiteralPath $tmp -Destination $settingsPath -Force
-Write-Host "Installed Braisenly status line for $ConfigDir"
+Write-Host "Installed Claude status line for $ConfigDir"

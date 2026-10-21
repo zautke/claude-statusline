@@ -41,10 +41,10 @@ dev=/dev/$tty
 cols() { [[ -r $dev ]] || return 0; stty size <"$dev" 2>/dev/null | awk '{print $2}'; }
 digest() { cksum <"$1" 2>/dev/null; }
 
-# Only a Braisenly-owned statusLine command gets a nonce; if the user switched or removed it, this watcher is done.
+# Only a claude-statusline-owned statusLine command gets a nonce; if the user switched or removed it, this watcher is done.
 # shellcheck source=../config/constants.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/config/constants.sh"
-owned() { jq -e --arg nonce "$NONCE_SUFFIX_SPACE_HASH_BSL_COLS_EQUALS_DIGITS_AT_END" --arg own "$OWNED_COMMAND_BRAISENLY_STATUSLINE_SCRIPTS_DISPATCHER_COMMAND_OR_LAUNCH" '(.statusLine.command? // "") | sub($nonce; "") | test($own) or . == "bash ~/.claude/statusline-dispatcher.sh"' "$settings" >/dev/null 2>&1; }
+owned() { jq -e --arg nonce "$NONCE_SUFFIX_SPACE_HASH_BSL_COLS_EQUALS_DIGITS_AT_END" --arg own "$OWNED_COMMAND_CLAUDE_OR_LEGACY_BRAISENLY_STATUSLINE_SCRIPTS_DISPATCHER_COMMAND_OR_LAUNCH" '(.statusLine.command? // "") | sub($nonce; "") | test($own) or . == "bash ~/.claude/statusline-dispatcher.sh"' "$settings" >/dev/null 2>&1; }
 bump() {
   local tmp before after keys_before keys_after
   [[ -r $settings ]] || return 0
@@ -84,6 +84,6 @@ while kill -0 "$pid" 2>/dev/null; do
   fi
   [[ -n $pending ]] || continue
   pending=
-  [[ -e ${settings%/*}/../.cache/braisenly-statusline/trace || -e ${XDG_CACHE_HOME:-$HOME/.cache}/braisenly-statusline/trace ]] && printf '%s bump cols=%s\n' "$(date +%s.%N)" "$now" >>"${XDG_CACHE_HOME:-$HOME/.cache}/braisenly-statusline/trace"
+  [[ -e ${settings%/*}/../.cache/claude-statusline/trace || -e ${XDG_CACHE_HOME:-$HOME/.cache}/claude-statusline/trace ]] && printf '%s bump cols=%s\n' "$(date +%s.%N)" "$now" >>"${XDG_CACHE_HOME:-$HOME/.cache}/claude-statusline/trace"
   bump "$now"
 done

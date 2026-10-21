@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# Stable statusLine.command target. Lives in <config-dir>/braisenly-statusline/ (copied there by
+# Stable statusLine.command target. Lives in <config-dir>/claude-statusline/ (copied there by
 # install.ps1), finds the installed plugin version in installed_plugins.json, and runs that
 # version's renderer in this process, so plugin updates reach the status line without a
 # settings edit and no second pwsh starts per render.
