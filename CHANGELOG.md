@@ -20,7 +20,12 @@ and each merge into `development` adds an entry to `changeset.md`.
 
 - The fit budget is now `COLUMNS - 4 - fit.reserve` (was `- 3`). Claude Code draws the status line 2 cells in from each edge, so a row padded to `COLUMNS - 3` overflowed by one cell and was cut with an ellipsis. Found live on Claude Code 2.1.306: a 52-column window shows 48 cells. The margin is the named constant `STATUS_LINE_AREA_HORIZONTAL_MARGIN_CELLS`.
 
+- The PowerShell renderer now matches the Bash one. It honours `segments` (order and subset, including the `profile` segment), per-segment `labels` and `widths`, and `NO_COLOR`, and it validates the whole schema all-or-nothing. Before this, those settings had no effect on Windows. The Fable label comes from `labels.fable`, and `fable.model` only picks the usage limit.
+- `tests/test-statusline.sh` used a fixed Fable `fetched_at` that has since gone stale, so every Fable check saw `n/a`. It now writes a fresh timestamp.
+
 ### Changed (continued)
+
+- Added `tests/test-statusline.ps1`, a PowerShell twin of `test-statusline.sh`. Both now check the exclusion ladder. Each of the 16 steps must produce exactly its declared change. Narrowing the line one column at a time must engage the steps in order, k at `L_k + margin` columns and k+1 one column narrower, and every step must free at least one cell. Both twins also reject invalid segments, labels, widths and Fable intervals.
 
 - Identity and regex constants live in `config/` (`identity.env`, `constants.{sh,ps1}`).
 

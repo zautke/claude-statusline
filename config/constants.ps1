@@ -24,3 +24,10 @@ $OWNED_COMMAND_MENTIONS_CLAUDE_OR_LEGACY_BRAISENLY_STATUSLINE = '(claude|braisen
 # (measured 2026-10-20 on Claude Code 2.1.306: a 52-column window shows 48 cells; a row padded to
 # COLUMNS - 3 was cut with an ellipsis). The fit budget is COLUMNS minus this margin minus fit.reserve.
 $STATUS_LINE_AREA_HORIZONTAL_MARGIN_CELLS = 4
+
+# Test parsing of the disk segment: "141.9G free" (one decimal), "142G free" (integer), and either form for masking.
+$DISK_FREE_ONE_DECIMAL_THEN_UNIT_THEN_SPACE_FREE = '([0-9]+\.[0-9])([KMG]) free'
+$DISK_FREE_INTEGER_THEN_UNIT_THEN_SPACE_FREE = ' ([0-9]+)([KMG]) free'
+$DISK_FREE_ANY_NUMBER_THEN_UNIT_THEN_SPACE_FREE = '[0-9.]+[KMG] free'
+# Start of an ANSI SGR escape sequence (ESC [).
+$ANSI_ESCAPE_SEQUENCE_START = "`e\["

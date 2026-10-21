@@ -31,9 +31,9 @@ cat >"$CLAUDE_CONFIG_DIR/statusline.json" <<'JSON'
 }
 JSON
 
-cat >"$XDG_CACHE_HOME/claude-statusline/fable.json" <<'JSON'
-{"used_percentage":42,"resets_at":"2026-09-21T00:00:00Z","model":"Fable","fetched_at":1790000000}
-JSON
+# Fresh cache: a fixed fetched_at goes stale after max_stale_seconds and would turn every Fable check into n/a.
+printf '{"used_percentage":42,"resets_at":"2026-09-21T00:00:00Z","model":"Fable","fetched_at":%s}\n' "$(date +%s)" \
+  >"$XDG_CACHE_HOME/claude-statusline/fable.json"
 
 payload='{"model":{"display_name":"Claude"},"context_window":{"used_percentage":25,"total_input_tokens":1000,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":20},"seven_day":{"used_percentage":30}}}'
 plain=$(printf '%s' "$payload" | NO_COLOR=1 CLAUDE_STATUSLINE_DISABLE_REFRESH=1 ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh")
@@ -72,7 +72,7 @@ assert_fit() { # $1=label $2=output $3=budget: every row <= budget, stacked rows
 # Wide terminal: flat, untouched, unpadded.
 wide=$(render 400)
 # Mask the live disk value: free space can change between two renders.
-mask() { sed -E 's/[0-9.]+[KMG] free/N free/' <<<"$1"; }
+mask() { sed -E "s/$DISK_FREE_ANY_NUMBER_THEN_UNIT_THEN_SPACE_FREE/N free/" <<<"$1"; }
 [[ "$(mask "$wide")" == "$(mask "$fallback")" ]] || { printf 'wide terminal changed the render\n' >&2; exit 1; }
 full_cells=$(cells "$fallback")
 # Stacked (opt-in rows:2): a width that fits two rows at full bars but not one row. Separators align, bars untouched.
@@ -105,7 +105,7 @@ assert_fit ladder60 "$lad60" $((60-margin))
 [[ "$lad60" != *"["* && "$lad60" != *"("* ]] || { printf 'bars or parentheses survived at 60 single-row: %s\n' "$lad60" >&2; exit 1; }
 [[ "$lad60" == *"25%"* ]] || { printf 'ctx percentage dropped at 60: %s\n' "$lad60" >&2; exit 1; }
 # Ladder order: the Fable segment leaves before 7d and 5h do, so if 7d or 5h is gone Fable must be gone too.
-if [[ "$lad60" != *"30%"* || "$lad60" != *"20%"* ]]; then [[ "$lad60" != *"n/a"* ]] || { printf 'ladder order violated at 60: %s\n' "$lad60" >&2; exit 1; }; fi
+if [[ "$lad60" != *"30%"* || "$lad60" != *"20%"* ]]; then [[ "$lad60" != *"42%"* ]] || { printf 'ladder order violated at 60: %s\n' "$lad60" >&2; exit 1; }; fi
 printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
 # A bar configured below the floor must not block shrinking of the others.
 printf '{"widths":{"fable":3},"fit":{"rows":1}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
@@ -145,6 +145,65 @@ boolcfg=$(render 400)
 printf '{"fit":{"ladder":["bogus"],"rows":2}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
 bad=$(render 90)
 [[ $(rows "$bad") -eq 1 && "$bad" == *"Fable"* ]] || { printf 'invalid ladder did not fall back to defaults: %s\n' "$bad" >&2; exit 1; }
+[[ "$fallback" != *$ANSI_ESCAPE_SEQUENCE_START* ]] || { printf 'NO_COLOR ignored: escape sequences in output\n' >&2; exit 1; }
+# Negatives on the rest of the schema: each rejects the whole file (PASS = defaults render, custom label absent).
+for bad_cfg in '{"segments":["model","model"],"labels":{"five_hour":"custom"}}' '{"segments":["nope"],"labels":{"five_hour":"custom"}}' \
+  '{"labels":{"five_hour":7}}' '{"widths":{"fable":0},"labels":{"five_hour":"custom"}}' '{"widths":{"fable":2.5},"labels":{"five_hour":"custom"}}' \
+  '{"fable":{"refresh_seconds":10},"labels":{"five_hour":"custom"}}'; do
+  printf '%s' "$bad_cfg" >"$CLAUDE_CONFIG_DIR/statusline.json"; o=$(render 400)
+  [[ "$o" != *custom* && "$o" == *Claude*ctx*5h* ]] || { printf 'invalid config accepted: %s -> %s\n' "$bad_cfg" "$o" >&2; exit 1; }
+done
+
+# ---- exclusion ladder map. Segments pinned (no /tmp) so every machine renders the same stages. ----
+order=(disk_label ctx_int no_parens disk_int ctx_no_total no_free fable_short disk_value ctx_no_used fable_label fable_segment seven_label five_label ctx_label seven_segment five_segment)
+pin='"segments":["model","cwd","context","disk","five_hour","seven_day","fable"]'
+floor() { local steps= s; for s in "$@"; do steps+=${steps:+,}"\"$s\""; done; printf '{%s,"fit":{"rows":1,"ladder":[%s]}}' "$pin" "$steps" >"$CLAUDE_CONFIG_DIR/statusline.json"; render 10; }
+trim() { local s=$1; printf '%s' "${s%"${s##*[! ]}"}"; }
+base=$(floor)
+[[ $base =~ $DISK_FREE_ONE_DECIMAL_THEN_UNIT_THEN_SPACE_FREE ]] || { printf 'baseline lost the disk value: %s\n' "$base" >&2; exit 1; }
+dnum=${BASH_REMATCH[1]} dunit=${BASH_REMATCH[2]}; dtok=$dnum$dunit
+# Each step on its own: exactly its declared change to the bars-off baseline, nothing else.
+expect_step() { # $1 step, $2 expected floor output
+  [[ $2 != "$base" ]] || { printf 'ladder %s: expectation is a no-op on baseline: %s\n' "$1" "$base" >&2; exit 1; }
+  local o; o=$(floor "$1"); [[ $o == "$2" ]] || { printf 'ladder %s: got [%s] want [%s]\n' "$1" "$o" "$2" >&2; exit 1; }
+}
+t=${base//(/}; t=${t//)/}
+expect_step disk_label "${base//disk /}"
+expect_step ctx_int "${base//\/195.3K/\/195K}"
+expect_step no_parens "$t"
+expect_step ctx_no_total "${base//\/195.3K/}"
+expect_step no_free "${base// free/}"
+expect_step fable_short "${base//Fable (/F (}"
+expect_step disk_value "${base// $dtok free/}"
+expect_step ctx_no_used "${base//1000B\//}"
+expect_step fable_label "${base//Fable (/(}"
+expect_step fable_segment "${base// ● Fable (42%)/}"
+expect_step seven_label "${base//7d (/(}"
+expect_step five_label "${base//5h (/(}"
+expect_step ctx_label "${base//ctx 1000B/1000B}"
+expect_step seven_segment "${base// ● 7d (30%)/}"
+expect_step five_segment "${base// ● 5h (20%)/}"
+o=$(floor disk_int)
+[[ $o =~ $DISK_FREE_INTEGER_THEN_UNIT_THEN_SPACE_FREE ]] || { printf 'ladder disk_int: no integer disk value: %s\n' "$o" >&2; exit 1; }
+inum=${BASH_REMATCH[1]}
+[[ ${BASH_REMATCH[2]} == "$dunit" ]] && awk -v a="$inum" -v b="$dnum" 'BEGIN{d=a-b; if (d<0) d=-d; exit !(d<=0.55)}' &&
+  [[ ${o/" $inum$dunit free"/" $dtok free"} == "$base" ]] || { printf 'ladder disk_int: got [%s] from [%s]\n' "$o" "$base" >&2; exit 1; }
+# Progressive order: the k-step floor needs L_k cells; at L_k + margin columns the default ladder shows exactly the
+# first k steps, one column less shows k+1. Every step buys at least one cell.
+floors=(); for ((k=0;k<=${#order[@]};k++)); do floors[k]=$(floor ${order[@]:0:k}); done
+for ((k=0;k<${#order[@]};k++)); do
+  (( $(cells "${floors[k+1]}") < $(cells "${floors[k]}") )) || { printf 'ladder step %s buys no cells\n' "${order[k]}" >&2; exit 1; }
+done
+printf '{%s,"fit":{"rows":1}}' "$pin" >"$CLAUDE_CONFIG_DIR/statusline.json"
+for ((k=0;k<=${#order[@]};k++)); do
+  lk=$(cells "${floors[k]}")
+  at=$(trim "$(render $((lk+margin)))")
+  [[ $at == "${floors[k]}" ]] || { printf 'ladder progression: at %s cols want %s steps [%s] got [%s]\n' $((lk+margin)) "$k" "${floors[k]}" "$at" >&2; exit 1; }
+  if ((k<${#order[@]})); then
+    below=$(trim "$(render $((lk+margin-1)))")
+    [[ $below == "${floors[k+1]}" ]] || { printf 'ladder progression: at %s cols want %s steps [%s] got [%s]\n' $((lk+margin-1)) $((k+1)) "${floors[k+1]}" "$below" >&2; exit 1; }
+  fi
+done
 printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
 
 ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh" --help | grep -q '^Usage:'

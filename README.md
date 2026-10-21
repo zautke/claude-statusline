@@ -33,9 +33,12 @@ Fable usage is read from a machine-global cache. Refresh runs detached and uses 
 bash tests/test-package.sh
 bash tests/test-launch.sh
 bash tests/test-statusline.sh
+bash tests/test-drift-control.sh
 claude plugin validate . --strict
 ```
 
 ```powershell
 pwsh -NoProfile -File tests/test-launch.ps1
+pwsh -NoProfile -File tests/test-statusline.ps1
+pwsh -NoProfile -File tests/test-drift-control.ps1
 ```
