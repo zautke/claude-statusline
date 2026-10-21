@@ -26,6 +26,18 @@ jq -e --arg n "$PLUGIN_NAME" '.name==$n' "$plugin/.claude-plugin/plugin.json" >/
 stamp_ok "$(jq -r .version "$plugin/.claude-plugin/plugin.json")" || fail 'plugin.json version is not MAJOR.MINOR.PATCH.BUILD-<branch>'
 jq -e --arg m "$MARKETPLACE" --arg n "$PLUGIN_NAME" '.name==$m and (.plugins|length)==1 and .plugins[0].name==$n and .plugins[0].source=="."' \
   "$plugin/.claude-plugin/marketplace.json" >/dev/null || fail 'marketplace.json identity'
+# Every client manifest carries the Claude manifest's identity fields unchanged; the Agent
+# Plugins root manifest pins the 1.0.0 schema.
+identity='{name,version,description,author,license,keywords}'
+want=$(jq -cS "$identity" "$plugin/.claude-plugin/plugin.json")
+for m in plugin.json .codex-plugin/plugin.json .github/plugin/plugin.json; do
+  [[ $(jq -cS "$identity" "$plugin/$m") == "$want" ]] || fail "$m identity differs from .claude-plugin/plugin.json"
+done
+jq -e '."$schema"=="https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"' "$plugin/plugin.json" >/dev/null || fail 'plugin.json $schema'
+jq -e --arg m "$MARKETPLACE" --arg n "$PLUGIN_NAME" '.name==$m and .plugins[0].name==$n and .plugins[0].source=={source:"local",path:"./"}' \
+  "$plugin/.agents/plugins/marketplace.json" >/dev/null || fail 'codex marketplace identity'
+jq -e --arg m "$MARKETPLACE" --arg n "$PLUGIN_NAME" '.name==$m and .plugins[0].name==$n and .plugins[0].source=="."' \
+  "$plugin/.github/plugin/marketplace.json" >/dev/null || fail 'copilot marketplace identity'
 jq -e '.skill_name=="configure-statusline" and (.evals|length)==4' "$plugin/skills/configure-statusline/evals/evals.json" >/dev/null || fail 'skill evals'
 jq empty "$plugin/interface.json" || fail 'interface.json'
 for s in statusline-command statusline-launch install; do
