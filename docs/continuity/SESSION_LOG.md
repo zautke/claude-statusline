@@ -24,3 +24,13 @@
 - Built: COLUMNS fit, bar shrink/drop, drift removed, heat-colored percentages, resize watcher (opt-in, hardened), live pty width, 16-step ladder, atom builders, two-row stacked layout (default 1 row), fork-free fit loop (2.9 s → 0.47 s).
 - Resize latency measured live by resizing the session pty: 0.42 s to watcher write, 1.65 s Claude Code settings reload.
 - Pre-hardening watcher once bumped the live settings.json; restored, verified identical to pre-session backup.
+
+## 2026-10-20 — coalesce, rename, adagio verification (session 876dc8f2, adagio)
+
+- RCA: braisenly-plugins had a hand port that bypassed `profile-publish`, and the session ran a stale clone hard-wired in the dot-agents settings SSoT. A plugin cannot set `statusLine`.
+- This repo became the only source and its own marketplace. The plugin is renamed `claude-statusline` (repo renamed) and ships for Claude Code only.
+- Stable launcher, `/drift-control` import with a `.ps1` twin, `config/` SSoT.
+- Live testing on adagio. The first windows were not field-faithful (inherited `NO_COLOR`, stable Windows Terminal) and that evidence was thrown away. A field window opened in the user's Windows Terminal Preview profile found the fit-margin defect: Claude Code's area is `COLUMNS-4`.
+- The user asked for a pwsh twin of the renderer test and real coverage of the ladder. Result: `test-statusline.ps1`, a ladder map test (16 per-step effects, plus progressive order) in both twins, mutation-checked, and pwsh renderer parity (segments, labels, widths, `NO_COLOR`, validation).
+- Versioning: the session first applied the org 4-part stamp, which the 2026-10-16 addendum forbids for plugins. Reverted to SemVer before review; release is 2.0.0 (breaking), tag `claude-statusline@2.0.0`.
+- kb: session summary, run ledger, retrospective and an experiential report under `projects/claude-statusline/` and `reference/agent-insights/`.

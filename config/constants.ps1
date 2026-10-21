@@ -1,8 +1,8 @@
 # Regex constants (.NET). Keep in step with constants.sh.
 
-# Org version stamp MAJOR.MINOR.PATCH.BUILD-<branch>; the branch part has "/" replaced by "-"
-# because the version names Claude Code's cache directory.
-$ORG_VERSION_STAMP_FOUR_DOTTED_INTEGERS_THEN_HYPHEN_LOWERCASE_BRANCH = '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+-[a-z0-9._-]+$'
+# Plugin version: plain SemVer MAJOR.MINOR.PATCH, the format Claude Code marketplaces expect. External mandate overrides
+# the org 4-part stamp (kb protocols/release/protocol-org-wide-branch-and-version-policy-development-and-main, addendum 2026-10-16).
+$PLAIN_SEMVER_MAJOR_DOT_MINOR_DOT_PATCH_DIGITS_ONLY = '^[0-9]+\.[0-9]+\.[0-9]+$'
 
 # Resize-watcher nonce appended to statusLine.command, e.g. " # bsl-cols=120".
 $NONCE_SUFFIX_SPACE_HASH_BSL_COLS_EQUALS_DIGITS_AT_END = ' # bsl-cols=[0-9]+$'

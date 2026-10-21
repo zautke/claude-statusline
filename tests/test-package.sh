@@ -19,11 +19,11 @@ load_identity "$plugin/config/identity.env"
 . "$plugin/config/constants.sh"
 
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
-stamp_ok() { [[ $1 =~ $ORG_VERSION_STAMP_FOUR_DOTTED_INTEGERS_THEN_HYPHEN_LOWERCASE_BRANCH ]]; }
+semver_ok() { [[ $1 =~ $PLAIN_SEMVER_MAJOR_DOT_MINOR_DOT_PATCH_DIGITS_ONLY ]]; }
 
 # Manifests agree with config/identity.env.
 jq -e --arg n "$PLUGIN_NAME" '.name==$n' "$plugin/.claude-plugin/plugin.json" >/dev/null || fail 'plugin.json name'
-stamp_ok "$(jq -r .version "$plugin/.claude-plugin/plugin.json")" || fail 'plugin.json version is not MAJOR.MINOR.PATCH.BUILD-<branch>'
+semver_ok "$(jq -r .version "$plugin/.claude-plugin/plugin.json")" || fail 'plugin.json version is not plain SemVer MAJOR.MINOR.PATCH'
 jq -e --arg m "$MARKETPLACE" --arg n "$PLUGIN_NAME" '.name==$m and (.plugins|length)==1 and .plugins[0].name==$n and .plugins[0].source=="."' \
   "$plugin/.claude-plugin/marketplace.json" >/dev/null || fail 'marketplace.json identity'
 jq -e '.skill_name=="configure-statusline" and (.evals|length)==4' "$plugin/skills/configure-statusline/evals/evals.json" >/dev/null || fail 'skill evals'
@@ -36,9 +36,9 @@ for s in statusline-command statusline-launch install; do
   [[ $(head -n 1 "$plugin/scripts/$s.ps1") == '#!/usr/bin/env pwsh' ]] || fail "$s.ps1 shebang"
 done
 
-# Negative: a 3-part SemVer is rejected by the org stamp (PASS = rejected).
-if stamp_ok '1.2.0'; then fail 'negative: 3-part version accepted'; fi
-if stamp_ok '1.2.0.0-feat/x'; then fail 'negative: slash in branch accepted'; fi
+# Negative: the org 4-part stamp and branch suffixes are rejected (PASS = rejected); marketplaces need plain SemVer.
+if semver_ok '1.2.0.0'; then fail 'negative: 4-part version accepted'; fi
+if semver_ok '1.2.0-feat-x'; then fail 'negative: branch suffix accepted'; fi
 
 temp=$(mktemp -d)
 trap 'rm -rf "$temp"' EXIT
