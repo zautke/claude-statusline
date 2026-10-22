@@ -19,8 +19,8 @@
 
 ## Open
 
-- [ ] Verify what the next dot-agents → braisenly-plugins publish does to the vendored `braisenly-statusline/` directory (overwrite, delete, or leave). Owner: user.
-- [ ] Windows resize watcher (`resize-watch.ps1`) untested on a live desktop session; AttachConsole needs an interactive session.
+- [x] Verify what the next dot-agents → braisenly-plugins publish does to the vendored `braisenly-statusline/` directory. Resolved 2026-10-20: the copy was removed from both repos and `EXTRACTED_PLUGINS` makes `profile-validate` refuse a re-add.
+- [x] Windows resize watcher (`resize-watch.ps1`) on a live desktop session. Verified 2026-10-20 in a field window (kb run ledger, E07/E08).
 - [ ] Optional: branch name on row 2 under cwd when stacked.
 - [ ] Optional: strip `thresholds`/`colors` from existing user configs when the skill next touches them.
 - [ ] largo disk: 5.7 GiB free, `~/.cache/uv/archive-v0` 8.2 GiB. Not touched.
