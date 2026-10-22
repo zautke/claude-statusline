@@ -23,3 +23,10 @@
 - Live tests must run in the user's own terminal (adagio: Windows Terminal Preview `PowerShell` profile, launched via `shell:AppsFolder\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe!App`), never in a window spawned from the agent shell. That shell carries `NO_COLOR=1` and session variables.
 - `.sh`/`.ps1` twins need twin tests. The pwsh renderer had silently ignored segments, labels, widths and `NO_COLOR`.
 - A user-level `~/.claude/commands/drift-control.md` shadows the plugin command; the plugin's stays reachable as `/claude-statusline:drift-control`.
+
+## 2026-10-21
+
+- The release rule was already in PLANS.md ("plain SemVer … per kb addendum 2026-10-16"), and the 4-part stamp was still applied on 2026-10-20. Read PLANS "Current facts" before any version change.
+- `claude-profile` homes symlink `settings.json` to dot-agents `settings/global/claude-settings.json`. Anything `statusLine` points at must stay until that SSoT, and every checked-out dot-agents branch on each host, point elsewhere.
+- Tests compare renders taken seconds apart, so the disk free value can change between them: mask the disk segment number (`DISK_SEGMENT_NUMBER_INTEGER_WITH_OPTIONAL_ONE_DECIMAL`).
+- bash 5.2 keeps a backslash in the replacement half of `${var//pat/rep}`; escape `/` only in the pattern.

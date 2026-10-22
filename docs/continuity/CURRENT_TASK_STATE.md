@@ -2,11 +2,13 @@
 
 Updated 2026-10-21.
 
-**State:** 2.0.0 release candidate on `feat/coalesce-plugin-copies` (PR #10). Not merged yet.
+**State:** claude-statusline **2.0.0 released**. Nothing in flight.
 
-- Both hosts run `claude-statusline@claude-statusline` from the marketplace at `#feat/coalesce-plugin-copies`, through the stable launcher in `~/.claude/claude-statusline/`.
-- Companion PRs: braisenly-plugins #6 (removes the vendored copy), dot-agents #24 (removes the `profiles/` copy; stacked on `feat/sign-in-base-plugin`).
+- `main` = `482cb3d`, tag `claude-statusline@2.0.0`; `development` in sync.
+- Both hosts run 2.0.0 from the `claude-statusline` marketplace on `main` (`autoUpdate: true`), with `statusLine` set to the stable launcher in `~/.claude/claude-statusline/`.
+- Profiles: dot-agents `settings/global/claude-settings.json` and `profiles/claude/base/settings.json` point at the launcher and enable the plugin (dot-agents `main` `77d955f2`). largo's `~/.agents` is on another branch, so a shim at `~/braisenly-statusline/scripts/statusline-dispatcher.sh` bridges until that branch takes `main`.
+- Install or repair from the proper source: dot-agents `/install-claude-statusline`.
 
-**Resume point:** review-bot triage on PR #10, then merge to `development`, promote to `main`, tag `claude-statusline@2.0.0`, and repoint both hosts' marketplace to `main`.
+**Resume point:** the open items in TASKS.md. The largest is the drift hook wiring (kb backlog note).
 
-**Protocol reminders:** read the kb org release policy and its 2026-10-16 addendum before any bump or tag. Bot findings: triage, report only critical ones to the user, and the user decides.
+**Protocol reminders:** read the kb org release policy and its 2026-10-16 addendum before any bump or tag (plain SemVer, `claude-statusline@X.Y.Z`). Bot findings: triage, report only critical ones to the user, and the user decides. Review rounds are capped at 3.
