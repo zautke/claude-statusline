@@ -19,8 +19,8 @@
 
 ## Open
 
-- [ ] Verify what the next dot-agents → braisenly-plugins publish does to the vendored `braisenly-statusline/` directory (overwrite, delete, or leave). Owner: user.
-- [ ] Windows resize watcher (`resize-watch.ps1`) untested on a live desktop session; AttachConsole needs an interactive session.
+- [x] Verify what the next dot-agents → braisenly-plugins publish does to the vendored `braisenly-statusline/` directory. Resolved 2026-10-20: the copy was removed from both repos and `EXTRACTED_PLUGINS` makes `profile-validate` refuse a re-add.
+- [x] Windows resize watcher (`resize-watch.ps1`) on a live desktop session. Verified 2026-10-20 in a field window (kb run ledger, E07/E08).
 - [ ] Optional: branch name on row 2 under cwd when stacked.
 - [ ] Optional: strip `thresholds`/`colors` from existing user configs when the skill next touches them.
 - [ ] largo disk: 5.7 GiB free, `~/.cache/uv/archive-v0` 8.2 GiB. Not touched.
@@ -38,6 +38,16 @@
 
 ## Open (2026-10-20)
 
-- [ ] Release 2.0.0: merge PR #10 to `development`, promote to `main`, tag `claude-statusline@2.0.0`. Then switch both hosts' marketplace from `#feat/coalesce-plugin-copies` to `main`.
-- [ ] Delete the stale `~/braisenly-statusline` clone on adagio and largo. Needs user confirmation.
+- [x] Release 2.0.0: #10 → `development`, #11 → `main` `482cb3d`, tag `claude-statusline@2.0.0`; both hosts switched to `main` (2026-10-21)
+- [x] Stale `~/braisenly-statusline` clones deleted (user confirmed 2026-10-21). This broke profile status lines; restored with a shim and fixed in dot-agents #26/#28.
 - [ ] Live re-run of E10 (`/drift-control`) in a field window; largo user-impersonation cases.
+
+## Open (2026-10-21)
+
+- [ ] Wire the drift assessor hook: `hooks/hooks.json` plus pwsh twins of `drift-hook-entry` and `drift-assess-worker`, with per-host registration. kb `projects/claude-statusline/claude-statusline-backlog-wire-the-drift-assessor-hook-future-implementation`.
+- [ ] Deferred Codex findings (same kb note):
+  - GNU `stat -c %s` and `date -d` fallbacks in `drift-assess-worker.sh`
+  - `--recent` must filter `kind=="score"` before tail, in both twins
+  - quote the custom `--config-dir` launcher path in `install.sh`
+- [ ] `install.sh` / `install.ps1` replace a symlinked `settings.json` with a plain file (temp-file rename). Write through the link instead. Today `/install-claude-statusline` guards against this.
+- [ ] largo: remove the `~/braisenly-statusline` shim once largo's `~/.agents` branch takes dot-agents `main`.
