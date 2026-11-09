@@ -51,3 +51,14 @@
   - quote the custom `--config-dir` launcher path in `install.sh`
 - [ ] `install.sh` / `install.ps1` replace a symlinked `settings.json` with a plain file (temp-file rename). Write through the link instead. Today `/install-claude-statusline` guards against this.
 - [ ] largo: remove the `~/braisenly-statusline` shim once largo's `~/.agents` branch takes dot-agents `main`.
+
+## Open (2026-11-09) — public release
+
+- [ ] README rewrite for the public (readme-writer, `docs/public-readme`)
+- [ ] Animated SVG + `.cast` demo of the exclusion ladder, regenerable via `scripts/demo/render-demo.sh` (demo-builder)
+- [ ] Simplify the codebase without behaviour change; rule on the "proposed, needs ruling" list (simplifier)
+- [ ] Two opus reviews per deliverable, max 3 fix rounds
+- [ ] Draft PRs into `development`; review bots addressed
+- [ ] Version bump + CHANGELOG + tag per kb release protocol; release-record surfaces (kb project log, org log, memories)
+- [ ] Promote to `main`
+- [ ] User OK, then `gh repo edit --visibility public`; add topics and homepage

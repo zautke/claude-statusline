@@ -21,6 +21,9 @@ A Claude Code status line (bash + PowerShell) that fits any terminal width while
 | 11. Stable launcher; `/drift-control` import plus `.ps1` twin | done 2026-10-20 | PR #10 (`942fc99`, `49d4ea5`) |
 | 12. Fit margin `COLUMNS-4`; pwsh parity; twin tests with the ladder map | done 2026-10-20 | PR #10 (`1c1b8b5`, `e39a69a`) |
 | 13. Release 2.0.0, hosts on `main` | done 2026-10-21 | #11, tag `claude-statusline@2.0.0` |
+| 14. Public release: professional README with animated width-shrink demo, all platforms, full config reference | in progress 2026-11-09 | branch `docs/public-readme` |
+| 15. Simplify / de-over-engineer the codebase, behaviour-preserving | in progress 2026-11-09 | branch `refactor/simplify-codebase` |
+| 16. Switch repo visibility to public | waiting on user OK | repo is PRIVATE as of 2026-11-09 |
 
 ## Current facts
 
@@ -31,6 +34,8 @@ A Claude Code status line (bash + PowerShell) that fits any terminal width while
 - Identity: `claude-statusline@claude-statusline`, marketplace in this repo (`source: "."`), Claude Code only. `config/identity.env` is the SSoT for scripts and tests.
 - `statusLine` runs the installer-owned launcher `<config-dir>/claude-statusline/scripts/statusline-launch.{sh,ps1}`, which resolves the installed version from `installed_plugins.json` on every render.
 - Claude Code shows the status line `COLUMNS - 4` cells wide (measured on 2.1.306); the budget is `COLUMNS - STATUS_LINE_AREA_HORIZONTAL_MARGIN_CELLS - fit.reserve`.
+
+- Public-facing README must be generated from source truth; demo frames are real renderer output (`scripts/demo/render-demo.sh`), never hand-drawn.
 
 ## Non-goals
 

@@ -18,3 +18,8 @@
 - The two insights above (read the release protocol first; when an external mandate wins) were on file and still went unread at the onset of the next session. Load this file and PLANS "Current facts" before planning, not after a reviewer catches it.
 - Twins (`.sh` / `.ps1`) need twin tests. The pwsh renderer silently ignored four config features until a PowerShell test suite existed.
 - Turn a named algorithm into a map test: per-step effect plus engagement order at threshold widths. Then mutation-check the suite (swap two steps; the suite must fail).
+
+## 2026-11-09
+
+- "Find the in-flight work" is a search across every store, ending in a clear negative with the evidence list. A thorough negative lets the user decide to restart instead of waiting for work that was never saved.
+- Run doc writing and code simplification in separate worktrees, and constrain the simplifier to byte-identical output and an unchanged config schema, so the README written in parallel stays true.

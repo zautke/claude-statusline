@@ -30,3 +30,9 @@
 - `claude-profile` homes symlink `settings.json` to dot-agents `settings/global/claude-settings.json`. Anything `statusLine` points at must stay until that SSoT, and every checked-out dot-agents branch on each host, point elsewhere.
 - Tests compare renders taken seconds apart, so the disk free value can change between them: mask the disk segment number (`DISK_SEGMENT_NUMBER_INTEGER_WITH_OPTIONAL_ONE_DECIMAL`).
 - bash 5.2 keeps a backslash in the replacement half of `${var//pat/rep}`; escape `/` only in the pattern.
+
+## 2026-11-09
+
+- Before claiming work is lost, check: `git branch -a`, `git worktree list`, `git stash list` on every clone on both hosts (incl. `~/.claude/plugins/marketplaces/claude-statusline`), `gh pr list --state all`, `gh api repos/zautke/claude-statusline/events`, both hosts' `~/.claude/history.jsonl`, user messages inside every transcript (Remote Control prompts can skip history.jsonl), and Codex sessions. On 2026-11-09 all were empty for public-release work.
+- No Claude Code session had ever run with cwd `/Users/derp/claude-statusline` on largo before 2026-11-09; earlier largo work ran in `~/braisenly-statusline` (deleted 2026-10-21).
+- adagio's `~/.claude/history.jsonl` stopped recording after 2026-11-08 12:49 although sessions ran later; do not treat its absence of prompts as proof.
