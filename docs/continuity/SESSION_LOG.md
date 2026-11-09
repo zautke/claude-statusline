@@ -5,7 +5,8 @@
 - User reported in-flight public-release work lost to a machine crash. Searched: local and remote branches, worktrees and stashes on both hosts (adagio old clone `C:\Users\me\dev\braisenly-statusline`, marketplace clones), all 14 PRs, GitHub events/releases, kb, prompt history on both hosts, every Claude Code transcript (user messages, subagents included), Codex sessions on both hosts. Nothing found. adagio rebooted 2026-11-07 22:12; largo up 4 days; the 11-09 12:05 "machine crash" was sessions dying, not a reboot.
 - README at that point: last changed 2026-10-20 (`e39a69a`); install, configure, checks only. Repo PRIVATE, MIT licence, no topics or homepage.
 - User asked for an opus/sonnet team to write a professional README for every case and feature, with an animated terminal recording of the width shrinking through the exclusion ladder, installs for PowerShell/macOS/Linux, configuration, demos; and an opus team to simplify the codebase. "README asap and live."
-- Spawned readme-writer (opus), demo-builder (sonnet), simplifier (opus) in three worktrees. Push monitor armed.
+- Spawned readme-writer (opus), demo-builder (sonnet), simplifier (opus) in two worktrees (`~/claude-statusline-wt/readme`, `~/claude-statusline-wt/simplify`). Push monitor armed.
+- User asked for continuity for exact pickup after handoff and for plans and session facts to be copied to kb. User stopped the three agents (no output). Continuity moved from a side worktree into the main checkout on `docs/continuity-2026-11-09`; `HANDOFF-public-release.md` holds the verbatim request and briefs.
 
 ## 2026-10-21 — release 2.0.0, host switch, install command (session 876dc8f2, adagio)
 
