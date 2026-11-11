@@ -55,6 +55,12 @@ before=$(cksum <"$profile/settings.json")
 bash "$plugin/scripts/install.sh" --config-dir "$profile" >/dev/null
 [[ $(cksum <"$profile/settings.json") == "$before" ]] || fail 'install not idempotent'
 
+# Other settings values survive an install verbatim (ISO-8601 strings: the ps1 twin once rewrote them through PS7's DateTime).
+mkdir -p "$temp/iso-profile"
+printf '{"x-test-date":"2026-11-15T13:59:59Z","x-test-frac":"2026-11-15T20:59:59.567363+00:00"}' >"$temp/iso-profile/settings.json"
+bash "$plugin/scripts/install.sh" --config-dir "$temp/iso-profile" >/dev/null
+jq -e '.["x-test-date"]=="2026-11-15T13:59:59Z" and .["x-test-frac"]=="2026-11-15T20:59:59.567363+00:00"' "$temp/iso-profile/settings.json" >/dev/null || fail 'install rewrote ISO dates'
+
 # Migration: commands under the legacy braisenly-statusline name (stale clone on adagio, old
 # cache path, nonce, the launcher under its first name) are taken over.
 for legacy in \

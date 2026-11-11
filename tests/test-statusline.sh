@@ -234,6 +234,14 @@ export FAKE_USAGE_RESPONSE='{"fable":{"used_percentage":55,"resets_at":"later"}}
 ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh" --refresh-fable
 jq -e '.used_percentage==55 and .resets_at=="later"' "$XDG_CACHE_HOME/claude-statusline/fable.json" >/dev/null
 
+# ISO-8601 resets_at is cached verbatim (the ps1 twin once rewrote it through PS7's DateTime).
+for iso in '2026-11-15T13:59:59Z' '2026-11-15T20:59:59.567363+00:00'; do
+  rm -f "$XDG_CACHE_HOME/claude-statusline/fable.json" "$XDG_CACHE_HOME/claude-statusline/next_refresh"
+  export FAKE_USAGE_RESPONSE='{"limits":[{"kind":"weekly_scoped","scope":{"model":{"display_name":"Fable"}},"used_percentage":61,"resets_at":"'$iso'"}]}'
+  ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh" --refresh-fable
+  jq -e --arg iso "$iso" '.resets_at==$iso' "$XDG_CACHE_HOME/claude-statusline/fable.json" >/dev/null || { printf 'fable ISO resets_at not verbatim\n' >&2; exit 1; }
+done
+
 jq '.fetched_at=1' "$XDG_CACHE_HOME/claude-statusline/fable.json" >"$TMP/stale.json"
 mv "$TMP/stale.json" "$XDG_CACHE_HOME/claude-statusline/fable.json"
 stale=$(printf '%s' "$payload" | NO_COLOR=1 CLAUDE_STATUSLINE_DISABLE_REFRESH=1 ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh")

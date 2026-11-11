@@ -22,6 +22,14 @@ try {
     if (-not $settings.enabledPlugins[$id.PLUGIN_ID]) { Fail 'plugin not enabled' }
     if ($settings.statusLine.command -ne "pwsh -NoProfile -NonInteractive -File `"$launcher`"") { Fail "statusLine command: $($settings.statusLine.command)" }
 
+    # PS7 turns ISO-8601 strings into DateTime; installing must leave other settings values byte-identical.
+    $isoProfile = Join-Path $temp 'iso-profile'
+    New-Item -ItemType Directory -Force $isoProfile | Out-Null
+    [IO.File]::WriteAllText((Join-Path $isoProfile 'settings.json'), '{"x-test-date":"2026-11-15T13:59:59Z","x-test-frac":"2026-11-15T20:59:59.567363+00:00"}')
+    & (Join-Path $plugin 'scripts/install.ps1') -ConfigDir $isoProfile | Out-Null
+    $iso = Get-Content -Raw (Join-Path $isoProfile 'settings.json') | ConvertFrom-Json -AsHashtable -DateKind String
+    if ($iso['x-test-date'] -cne '2026-11-15T13:59:59Z' -or $iso['x-test-frac'] -cne '2026-11-15T20:59:59.567363+00:00') { Fail "install rewrote ISO dates: $($iso['x-test-date']) / $($iso['x-test-frac'])" }
+
     # Migration: a command under the legacy braisenly-statusline name is taken over; an unrelated one is refused.
     $want = $settings.statusLine.command
     foreach ($legacy in 'pwsh -NoProfile -NonInteractive -File "C:\Users\me\.claude\braisenly-statusline\scripts\statusline-launch.ps1" # bsl-cols=90',

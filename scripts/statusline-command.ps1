@@ -137,12 +137,13 @@ function Refresh-Fable {
         if ((Get-NextRefresh) -gt $now) { return }
         # Claim the slot before the request so a failure backs off instead of retrying on every render.
         Set-Content -LiteralPath $nextRefreshFile -Value ($now + $fableRefreshSeconds) -NoNewline
-        $response = Invoke-RestMethod -Uri ($env:CLAUDE_STATUSLINE_USAGE_URL ?? 'https://api.anthropic.com/api/oauth/usage') -Headers @{
+        # Parse the body ourselves: Invoke-RestMethod turns ISO-8601 strings (resets_at) into DateTime, and the [string] cast below would cache them in the local culture.
+        $response = (Invoke-WebRequest -Uri ($env:CLAUDE_STATUSLINE_USAGE_URL ?? 'https://api.anthropic.com/api/oauth/usage') -Headers @{
             Authorization = "Bearer $token"
             'anthropic-beta' = 'oauth-2025-04-20'
             Accept = 'application/json'
             'User-Agent' = 'claude-code/claude-statusline'
-        } -TimeoutSec 8
+        } -TimeoutSec 8).Content | ConvertFrom-Json -DateKind String
         $limits = if ($response.limits) { $response.limits } elseif ($response.cachedUsageUtilization.utilization.limits) { $response.cachedUsageUtilization.utilization.limits } else { @() }
         $limit = @($limits | Where-Object {
             $_.kind -eq 'weekly_scoped' -and

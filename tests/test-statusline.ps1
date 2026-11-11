@@ -223,6 +223,11 @@ try {
     if ($c.used_percentage -ne 73 -or $c.resets_at -ne 'later-percent') { Fail "fable refresh (percent): $($c | ConvertTo-Json -Compress)" }
     $c = Refresh-With '{"fable":{"used_percentage":55,"resets_at":"later"}}'
     if ($c.used_percentage -ne 55 -or $c.resets_at -ne 'later') { Fail "fable refresh (fable object): $($c | ConvertTo-Json -Compress)" }
+    # PS7 turns ISO-8601 strings into DateTime; the cache must still hold the API's string verbatim (as the sh twin does).
+    foreach ($iso in '2026-11-15T13:59:59Z', '2026-11-15T20:59:59.567363+00:00') {
+        $c = Refresh-With ('{"limits":[{"kind":"weekly_scoped","scope":{"model":{"display_name":"Fable"}},"used_percentage":61,"resets_at":"' + $iso + '"}]}')
+        if ($c.resets_at -cne $iso) { Fail "fable refresh (ISO resets_at): want [$iso] got [$($c.resets_at)]" }
+    }
     $listener.Stop()
 
     $c['fetched_at'] = 1; ($c | ConvertTo-Json -Compress) | Set-Content -LiteralPath $Fable

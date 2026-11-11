@@ -54,7 +54,8 @@ function Set-Nonce([int]$cols) {
     try {
         if (-not (Test-Path -LiteralPath "$Settings.bsl-backup")) { Copy-Item -LiteralPath $Settings -Destination "$Settings.bsl-backup"; Get-Acl -LiteralPath $Settings | Set-Acl -LiteralPath "$Settings.bsl-backup" }
         $before = Get-Digest $Settings
-        $cfg = Get-Content -LiteralPath $Settings -Raw | ConvertFrom-Json
+        # -DateKind String keeps ISO-8601 values verbatim; no -AsHashtable, which would reorder the user's keys on every write.
+        $cfg = Get-Content -LiteralPath $Settings -Raw | ConvertFrom-Json -DateKind String
         $cmd = [string]$cfg.statusLine.command
         # Only a claude-statusline-owned statusLine command gets a nonce; if the user switched or removed it, this watcher is done.
         $bare = $cmd -replace $NONCE_SUFFIX_SPACE_HASH_BSL_COLS_EQUALS_DIGITS_AT_END, ''
@@ -66,7 +67,7 @@ function Set-Nonce([int]$cols) {
         # Carry the original ACL onto the temp file so the rename never loosens permissions.
         Get-Acl -LiteralPath $Settings | Set-Acl -LiteralPath $tmp
         # Validate: parses, and no top-level key was lost.
-        $check = Get-Content -LiteralPath $tmp -Raw | ConvertFrom-Json
+        $check = Get-Content -LiteralPath $tmp -Raw | ConvertFrom-Json -DateKind String
         $keysAfter = ($check.PSObject.Properties.Name | Sort-Object) -join ','
         if ($keysBefore -ne $keysAfter) { Remove-Item -LiteralPath $tmp -Force; return }
         # Last-instant check: Claude Code also writes this file; if it changed since we read it, drop this bump.

@@ -25,7 +25,7 @@ $settingsPath = Join-Path $ConfigDir 'settings.json'
 New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
 
 $settings = if (Test-Path -LiteralPath $settingsPath) {
-    Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json -AsHashtable
+    Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json -AsHashtable -DateKind String
 } else { [ordered]@{} }
 # Strip the resize watcher's nonce before the ownership check.
 $current = ([string]$settings.statusLine.command) -replace $NONCE_SUFFIX_SPACE_HASH_BSL_COLS_EQUALS_DIGITS_AT_END, ''
