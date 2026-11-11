@@ -221,7 +221,19 @@ try {
     function Floor([string[]]$steps) { Set-Config ('{' + $pin + ',"fit":{"rows":1,"ladder":[' + (($steps | ForEach-Object { "`"$_`"" }) -join ',') + ']}}'); return (Render 10) }
     # The disk segment is always the 4th in the pinned order; mask its number so a free-space change between two renders
     # does not fail a comparison. ponytail: a digit-count change (9.9G -> 10.0G) mid-run still shifts the widths by one.
-    function Mask-Disk([string]$s) { $seg = $s -split ' ● '; if ($seg.Count -ge 4) { $seg[3] = $seg[3] -replace $DISK_SEGMENT_NUMBER_INTEGER_WITH_OPTIONAL_ONE_DECIMAL, 'N' }; return ($seg -join ' ● ') }
+    # Per row (a stacked render has two), so the disk value on the values row is masked too; the disk bar's fill is
+    # masked as well, since a free-space change can move its percentage.
+    function Mask-Disk([string]$s) {
+        (@($s -split "`n" | ForEach-Object { $seg = $_ -split ' ● '; if ($seg.Count -ge 4) { $seg[3] = $seg[3] -replace $DISK_SEGMENT_NUMBER_INTEGER_WITH_OPTIONAL_ONE_DECIMAL, 'N' -replace '[█░]+', 'B' }; $seg -join ' ● ' }) -join "`n")
+    }
+    # Deterministic check of the mask: flat and stacked renders that differ only in free space mask equal; a change
+    # outside the disk segment still shows.
+    $mf = 'Claude ● ~/w ● ctx [█░░] 1000B/195.3K (25%) ● disk [{1}] {0} free ● 5h [█░] (20%)'
+    $ms = "Claude ● ~/w ● ctx [█░░] ● disk [{1}] ● 5h [█░]`n⠀      ●     ●  1000B/195.3K (25%) ● {0} free ● (20%)"
+    foreach ($fmt in $mf, $ms) {
+        if ((Mask-Disk ($fmt -f '26.3G', '██░░')) -cne (Mask-Disk ($fmt -f '26.2G', '█░░░'))) { Fail "mask-disk: free-space change not masked: $fmt" }
+        if ((Mask-Disk ($fmt -f '26.3G', '██░░')) -ceq (Mask-Disk (($fmt -f '26.3G', '██░░').Replace('(20%)', '(21%)')))) { Fail "mask-disk: masked a change outside the disk segment: $fmt" }
+    }
     $base = Floor @()
     $m = [regex]::Match($base, $DISK_FREE_ONE_DECIMAL_THEN_UNIT_THEN_SPACE_FREE)
     if (-not $m.Success) { Fail "baseline lost the disk value: $base" }

@@ -224,7 +224,18 @@ floor() { local steps= s; for s in "$@"; do steps+=${steps:+,}"\"$s\""; done; pr
 trim() { local s=$1; printf '%s' "${s%"${s##*[! ]}"}"; }
 # The disk segment is always the 4th in the pinned order; mask its number so a free-space change between two renders
 # does not fail a comparison. ponytail: a digit-count change (9.9G -> 10.0G) mid-run still shifts the widths by one.
-mask_disk() { awk -F ' ● ' -v OFS=' ● ' -v re="$DISK_SEGMENT_NUMBER_INTEGER_WITH_OPTIONAL_ONE_DECIMAL" 'NF>=4{gsub(re,"N",$4)}1' <<<"$1"; }
+# awk works per row, so a stacked render's values row is masked too; the disk bar's fill is masked as well, since a
+# free-space change can move its percentage.
+mask_disk() { awk -F ' ● ' -v OFS=' ● ' -v re="$DISK_SEGMENT_NUMBER_INTEGER_WITH_OPTIONAL_ONE_DECIMAL" 'NF>=4{gsub(re,"N",$4); gsub(/[█░]+/,"B",$4)}1' <<<"$1"; }
+# Deterministic check of the mask: flat and stacked renders that differ only in free space mask equal; a change
+# outside the disk segment still shows.
+mf='Claude ● ~/w ● ctx [█░░] 1000B/195.3K (25%) ● disk [BAR] FREE free ● 5h [█░] (20%)'
+ms=$'Claude ● ~/w ● ctx [█░░] ● disk [BAR] ● 5h [█░]\n⠀      ●     ●  1000B/195.3K (25%) ● FREE free ● (20%)'
+for fmt in "$mf" "$ms"; do
+  x=${fmt//FREE/26.3G}; x=${x//BAR/██░░}; y=${fmt//FREE/26.2G}; y=${y//BAR/█░░░}
+  [[ $(mask_disk "$x") == "$(mask_disk "$y")" ]] || { printf 'mask-disk: free-space change not masked:\n%s\n%s\n' "$x" "$y" >&2; exit 1; }
+  [[ $(mask_disk "$x") != "$(mask_disk "${x/(20%)/(21%)}")" ]] || { printf 'mask-disk: masked a change outside the disk segment\n' >&2; exit 1; }
+done
 base=$(floor)
 [[ $base =~ $DISK_FREE_ONE_DECIMAL_THEN_UNIT_THEN_SPACE_FREE ]] || { printf 'baseline lost the disk value: %s\n' "$base" >&2; exit 1; }
 dnum=${BASH_REMATCH[1]} dunit=${BASH_REMATCH[2]}; dtok=$dnum$dunit
