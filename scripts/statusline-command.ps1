@@ -224,7 +224,7 @@ $input_data = [Console]::In.ReadToEnd()
 
 $ESC     = [char]27
 $R       = "$ESC[0m"
-$C_MODEL = "$ESC[1;38;2;86;182;194m"   # steel-blue bold
+$C_MODEL = "$ESC[1;38;5;75m"            # bold blue, as the Bash renderer
 $C_LABEL = "$ESC[38;5;240m"             # dim gray labels
 $C_SEP   = "$ESC[38;5;237m"             # separator pipe
 $C_VAL   = "$ESC[38;5;243m"             # dim value text
@@ -236,14 +236,15 @@ if ($noColor) { $R = ''; $C_MODEL = ''; $C_LABEL = ''; $C_SEP = ''; $C_VAL = '';
 
 function Get-CellColor([int]$pos) {
     if ($noColor) { return '' }
+    # Integer division as in the Bash renderer: [int] would round half-to-even and drift one step off the twin.
     if ($pos -le 50) {
-        $r = 40  + [int](180 * $pos / 50)
-        $g = 170 - [int](10  * $pos / 50)
-        $b = 60  - [int](60  * $pos / 50)
+        $r = 40  + [math]::Floor(180 * $pos / 50)
+        $g = 170 - [math]::Floor(10  * $pos / 50)
+        $b = 60  - [math]::Floor(60  * $pos / 50)
     } else {
         $p2 = $pos - 50
-        $r = 220 - [int](40  * $p2 / 50)
-        $g = 160 - [int](160 * $p2 / 50)
+        $r = 220 - [math]::Floor(40  * $p2 / 50)
+        $g = 160 - [math]::Floor(160 * $p2 / 50)
         $b = 0
     }
     return "$ESC[38;2;${r};${g};${b}m"

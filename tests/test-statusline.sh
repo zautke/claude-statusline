@@ -199,9 +199,12 @@ s1=$(row "$stk2" 1) s2=$(row "$stk2" 2)
 seps() { local s=$1 i o=; for ((i=0;i<${#s};i++)); do [[ ${s:i:1} == ● ]]&&o+="$i "; done; printf '%s' "$o"; }
 [[ -n $(seps "$s1") && $(seps "$s1") == "$(seps "$s2")" ]] || { printf 'resets stacked separators misaligned: [%s] [%s]\n' "$(seps "$s1")" "$(seps "$s2")" >&2; exit 1; }
 # Colour: the reset text and glyph carry the value colour (SGR 38;5;243).
-printf '{"segments":["five_hour","seven_day"],%s}' "$cd_" >"$CLAUDE_CONFIG_DIR/statusline.json"
+printf '{"segments":["model","five_hour","seven_day"],%s}' "$cd_" >"$CLAUDE_CONFIG_DIR/statusline.json"
 col=$(printf '%s' "$fix" | env -u NO_COLOR COLUMNS=400 CLAUDE_STATUSLINE_DISABLE_REFRESH=1 ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh")
 [[ $col == *$'\033[38;5;243m↻2h13m ⊟◂\033[0m'* && $col == *$'\033[38;5;243m↻4d6h ⊟◂\033[0m'* ]] || { printf 'resets colour: value SGR missing: %q\n' "$col" >&2; exit 1; }
+# The whole coloured line, byte for byte; the ps1 twin asserts the same literal (model colour, bar gradient, SGR order).
+E=$'\033'
+want colour-line "$col" "${E}[1;38;5;75mClaude${E}[0m${E}[38;5;237m ● ${E}[0m${E}[38;5;240m5h${E}[0m [${E}[38;2;40;170;60m█${E}[38;2;68;169;51m█${E}[38;5;59m░░░░░░░░░░${E}[0m] (${E}[38;2;112;166;36m20%${E}[0m) ${E}[38;5;243m↻2h13m ⊟◂${E}[0m${E}[38;5;237m ● ${E}[0m${E}[38;5;240m7d${E}[0m [${E}[38;2;40;170;60m█${E}[38;2;68;169;51m█${E}[38;2;97;167;41m█${E}[38;2;130;165;30m█${E}[38;5;59m░░░░░░░░${E}[0m] (${E}[38;2;148;164;24m30%${E}[0m) ${E}[38;5;243m↻4d6h ⊟◂${E}[0m"
 
 # ---- exclusion ladder map. Segments pinned (no /tmp) so every machine renders the same stages. ----
 order=(resets disk_label ctx_int no_parens disk_int ctx_no_total no_free fable_short disk_value ctx_no_used fable_label fable_segment seven_label five_label ctx_label seven_segment five_segment)
