@@ -45,9 +45,33 @@ done
 if semver_ok '1.2.0.0'; then fail 'negative: 4-part version accepted'; fi
 if semver_ok '1.2.0-feat-x'; then fail 'negative: branch suffix accepted'; fi
 
+# Reset-toggle identity: installers and launchers take the chord, command name and URL scheme from
+# identity.env / constants, never as literals; hooks/register.js (JS, cannot read them) must match identity.env.
+for f in install.sh install.ps1 statusline-launch.sh statusline-launch.ps1; do
+  for lit in "$RESETS_TOGGLE_DEFAULT_KEY_CHORD_CTRL_X_THEN_R" "$RESETS_COMMAND_NAME" "$URL_SCHEME://"; do
+    if grep -qiF -- "$lit" "$plugin/scripts/$f"; then fail "$f hardcodes '$lit'"; fi
+  done
+done
+for f in install.sh install.ps1; do
+  grep -q 'RESETS_TOGGLE_DEFAULT_KEY_CHORD_CTRL_X_THEN_R' "$plugin/scripts/$f" && grep -q 'RESETS_COMMAND_NAME' "$plugin/scripts/$f" &&
+    grep -q 'URL_SCHEME' "$plugin/scripts/$f" || fail "$f does not take chord/command/scheme from constants/identity"
+done
+if [[ -f $plugin/hooks/register.js ]]; then
+  grep -qE "[\"']$RESETS_COMMAND_NAME[\"']" "$plugin/hooks/register.js" || fail 'register.js command name differs from identity.env'
+fi
+# Install Usage lists every flag, in both twins.
+for s in install.sh install.ps1; do
+  for flag in '-c, --config-dir' '-f, --force' '-U, --uninstall' '-W, --no-wt-scheme' '-h, --help'; do
+    grep -qF -- "$flag" "$plugin/scripts/$s" || fail "$s Usage lacks $flag"
+  done
+done
+
 temp=$(mktemp -d)
 trap 'rm -rf "$temp"' EXIT
 profile=$temp/profile
+# The installer also registers a click handler: keep HOME, XDG dirs and tools inside the sandbox.
+export HOME=$temp/home XDG_DATA_HOME=$temp/xdg-data XDG_CONFIG_HOME=$temp/xdg-config CLAUDE_STATUSLINE_XDG_MIME=$temp/no-xdg-mime
+[[ $HOME == "$temp"/* && $XDG_DATA_HOME == "$temp"/* ]] || { printf 'ABORT: isolation overrides unset\n' >&2; exit 3; }
 
 # Fresh install: launcher copied, statusLine points at it, plugin enabled.
 bash "$plugin/scripts/install.sh" --config-dir "$profile" >/dev/null
