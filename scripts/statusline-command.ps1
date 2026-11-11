@@ -367,6 +367,7 @@ $nowEpoch = 0L
 if (-not ($env:CLAUDE_STATUSLINE_NOW -match $NON_NEGATIVE_INTEGER_DIGITS_ONLY -and [long]::TryParse($env:CLAUDE_STATUSLINE_NOW, [ref]$nowEpoch))) { $nowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
 function Get-ResetText($at, [string]$slot) {
     if ($resetsMode -eq 'off' -or -not ($at -is [int] -or $at -is [long] -or $at -is [double] -or $at -is [decimal])) { return '' }
+    if ($at -lt 0 -or $at -gt $RESETS_AT_LATEST_RENDERABLE_EPOCH_SECONDS_9999_12_31_23_59_00_UTC) { return '' }
     $up = [long]([math]::Ceiling([double]$at / 60) * 60)
     if ($resetsMode -eq 'clock') {
         $t = [DateTimeOffset]::FromUnixTimeSeconds($up).ToLocalTime(); $ic = [Globalization.CultureInfo]::InvariantCulture

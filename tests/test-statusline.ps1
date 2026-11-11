@@ -171,19 +171,24 @@ try {
     $clockLine = "$B5 $(Clock 1794435180 '5h') ⊟◂ ● $B7 $(Clock 1794794400 '7d') ⊟◂"
     Want 'clock' (Rr '' $fix) $clockLine
     Want 'clock-explicit' (Rr '"resets":true,"resets_format":"clock"' $fix) $clockLine
-    # Day codes: Sunday 2026-11-15 00:00 UTC plus k days and k hours, one epoch per weekday; together they cover all 7 codes.
-    $seen = @{}
-    for ($k = 0; $k -le 6; $k++) {
-        $e = 1794700800 + $k * 86400 + $k * 3600; $c = Clock $e '7d'; $seen[$c.Substring(1, $c.Length - 3)] = 1
-        Want "day $k" (Rr '' (Pay $null $e)) "$B5 ⊟◂ ● $B7 $c ⊟◂"
-    }
-    if ($seen.Count -ne 7) { Fail "day codes not all distinct: $($seen.Keys -join ',')" }
-    # Round-up: :59:59 reaches the next minute (and Saturday 23:59:59 the next day); an exact minute stays.
-    if ((Clock 1794751199 '5h') -cne (Clock 1794751200 '5h') -or (Clock 1794751140 '5h') -ceq (Clock 1794751200 '5h')) { Fail 'clock round-up expectation' }
-    Want 'roundup' (Rr '' (Pay 1794751199 1795305599)) "$B5 $(Clock 1794751200 '5h') ⊟◂ ● $B7 $(Clock 1795305600 '7d') ⊟◂"
-    Want 'exact' (Rr '' (Pay 1794751140 $null)) "$B5 $(Clock 1794751140 '5h') ⊟◂ ● $B7 ⊟◂"
+    # Day codes: 7 consecutive LOCAL dates at 12:00 from Sunday 2026-11-15, so the weekday is the same in every zone
+    # (and no DST edge is near); literal codes, not the renderer's constant.
+    function LocalEpoch([int]$day, [int]$h, [int]$m, [int]$s) { ([DateTimeOffset][datetime]::new(2026, 11, $day, $h, $m, $s, [DateTimeKind]::Local)).ToUnixTimeSeconds() }
+    $codes = @('SU', 'M', 'T', 'W', 'R', 'F', 'SA')
+    for ($k = 0; $k -le 6; $k++) { Want "day $k" (Rr '' (Pay $null (LocalEpoch (15 + $k) 12 0 0))) "$B5 ⊟◂ ● $B7 ↻$($codes[$k])12 ⊟◂" }
+    # Round-up: local 13:59:59 reaches 14:00 and Saturday 23:59:59 reaches Sunday 00; an exact minute stays.
+    Want 'roundup' (Rr '' (Pay (LocalEpoch 15 13 59 59) (LocalEpoch 21 23 59 59))) "$B5 ↻14:00 ⊟◂ ● $B7 ↻SU00 ⊟◂"
+    Want 'exact' (Rr '' (Pay (LocalEpoch 15 13 59 0) $null)) "$B5 ↻13:59 ⊟◂ ● $B7 ⊟◂"
     # Countdown minutes, a sub-minute remainder rounding up, and a reset already past.
     Want 'minutes' (Rr $cd (Pay 1794427500 1794427261)) "$B5 ↻5m ⊟◂ ● $B7 ↻2m ⊟◂"
+    # Countdown thresholds: 59m stays minutes, 60m turns into hours, 1439m stays hours, 1440m turns into days.
+    Want 'bounds-hour' (Rr $cd (Pay 1794430740 1794430800)) "$B5 ↻59m ⊟◂ ● $B7 ↻1h0m ⊟◂"
+    Want 'bounds-day' (Rr $cd (Pay 1794513540 1794513600)) "$B5 ↻23h59m ⊟◂ ● $B7 ↻1d0h ⊟◂"
+    # Out of range (a millisecond epoch, 1e300, negative): no reset text, each slot on its own, both formats.
+    foreach ($x in '', $cd) {
+        Want "out-of-range [$x]" (Rr $x (Pay '1794435180000' '1e300')) "$B5 ⊟◂ ● $B7 ⊟◂"
+        Want "out-of-range-one [$x]" (Rr $x (Pay '-60' '1794794400')) "$B5 ⊟◂ ● $B7 $(if ($x) { '↻4d6h' } else { Clock 1794794400 '7d' }) ⊟◂"
+    }
     Want 'past' (Rr $cd (Pay 1794426600 $null)) "$B5 ↻0m ⊟◂ ● $B7 ⊟◂"
     Want 'off' (Rr '"resets":false' $fix) "$B5 ⊞◂ ● $B7 ⊞◂"
     Want 'off-countdown' (Rr '"resets":false,"resets_format":"countdown"' $fix) "$B5 ⊞◂ ● $B7 ⊞◂"

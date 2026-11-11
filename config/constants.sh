@@ -57,3 +57,7 @@ RESETS_TOGGLE_URL_SCHEME_TOGGLE_SLOT_5H_OR_7D_OPTIONAL_PROFILE_FULL_MATCH='^clau
 # One OSC 8 hyperlink sequence, for stripping: ESC ] 8 ; params ; uri, ended by ST (ESC \) or BEL. The closing
 # link ESC ] 8 ; ; ST matches too.
 ANSI_OSC8_HYPERLINK_SEQUENCE_ESC_RIGHT_BRACKET_8_PARAMS_URI_TERMINATED_BY_ST_OR_BEL=$'\033\\]8;[^;\033\007]*;[^\033\007]*(\033\\\\|\007)'
+
+# Latest resets_at the renderers format (9999-12-31T23:59:00Z, the .NET DateTimeOffset ceiling after the round-up to a minute).
+# Outside 0..this (e.g. a millisecond epoch) a slot renders no reset text.
+RESETS_AT_LATEST_RENDERABLE_EPOCH_SECONDS_9999_12_31_23_59_00_UTC=253402300740

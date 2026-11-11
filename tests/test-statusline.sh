@@ -184,6 +184,15 @@ want roundup "$(rr '' "$(rp 1794751199 1795305599)")" "$B5 ↻14:00 ⊟◂ ● $
 want exact "$(rr '' "$(rp 1794751140 '')")" "$B5 ↻13:59 ⊟◂ ● $B7 ⊟◂"
 # Countdown minutes, a sub-minute remainder rounding up, and a reset already past.
 want minutes "$(rr "$cd_" "$(rp 1794427500 1794427261)")" "$B5 ↻5m ⊟◂ ● $B7 ↻2m ⊟◂"
+# Countdown thresholds: 59m stays minutes, 60m turns into hours, 1439m stays hours, 1440m turns into days.
+want bounds-hour "$(rr "$cd_" "$(rp 1794430740 1794430800)")" "$B5 ↻59m ⊟◂ ● $B7 ↻1h0m ⊟◂"
+want bounds-day "$(rr "$cd_" "$(rp 1794513540 1794513600)")" "$B5 ↻23h59m ⊟◂ ● $B7 ↻1d0h ⊟◂"
+# Out of range (a millisecond epoch, 1e300, negative): no reset text, each slot on its own, both formats.
+for x in '' "$cd_"; do
+  want "out-of-range [$x]" "$(rr "$x" "$(rp 1794435180000 1e300)")" "$B5 ⊟◂ ● $B7 ⊟◂"
+  if [[ -n $x ]]; then w='↻4d6h'; else w='↻M02'; fi
+  want "out-of-range-one [$x]" "$(rr "$x" "$(rp -60 1794794400)")" "$B5 ⊟◂ ● $B7 $w ⊟◂"
+done
 want past "$(rr "$cd_" "$(rp 1794426600 '')")" "$B5 ↻0m ⊟◂ ● $B7 ⊟◂"
 want off "$(rr '"resets":false' "$fix")" "$B5 ⊞◂ ● $B7 ⊞◂"
 want off-countdown "$(rr '"resets":false,"resets_format":"countdown"' "$fix")" "$B5 ⊞◂ ● $B7 ⊞◂"
