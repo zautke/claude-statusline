@@ -80,6 +80,7 @@ if [[ $action == url ]]; then
   tail_text=$(printf '%s' "$err" | tr '\r\n' '  ')
   ((${#tail_text} > 200)) && tail_text=${tail_text:${#tail_text}-200}
   log_dir=$cfg/$LAUNCHER_HOME log=$cfg/$LAUNCHER_HOME/url-handler.log
+  [[ -e $log ]] && log=$(resolve "$log")
   mkdir -p "$log_dir" && atomic_write "$log" "$({ [[ -f $log ]] && cat "$log"; printf '%s %s%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$rc" "${tail_text:+ $tail_text}"; } | tail -n 50)"
   exit "$rc"
 fi
@@ -88,7 +89,8 @@ fi
 sl=$cfg/statusline.json
 [[ -e $sl ]] && sl=$(resolve "$sl")
 if [[ -e $sl ]]; then
-  current=$(jq -e 'if type == "object" then . else error end' "$sl" 2>/dev/null) || { printf 'resets-toggle.sh: %s is not a JSON object; left unchanged\n' "$sl" >&2; exit 1; }
+  # Slurp: exactly one document, and it is an object ({} {} is a stream, not a config).
+  current=$(jq -se 'if length == 1 and (.[0] | type) == "object" then .[0] else error end' "$sl" 2>/dev/null) || { printf 'resets-toggle.sh: %s is not a JSON object; left unchanged\n' "$sl" >&2; exit 1; }
 else
   current='{}'
 fi
@@ -115,7 +117,9 @@ reconcile() {
   [[ -e $st ]] || return 0
   st=$(resolve "$st")
   before=$(cksum <"$st")
-  raw=$(jq -r '.statusLine.command? // "" | strings' "$st" 2>/dev/null) || { printf 'resets-toggle.sh: %s is not valid JSON; left unchanged\n' "$st" >&2; return 0; }
+  jq -se 'length == 1' "$st" >/dev/null 2>&1 || { printf 'resets-toggle.sh: %s is not valid JSON; left unchanged\n' "$st" >&2; return 0; }
+  # A root or statusLine that is not an object, or a non-string command, reads as "" (unowned), as in the ps1 twin.
+  raw=$(jq -r 'if type == "object" then (.statusLine | objects | .command | strings) // "" else "" end' "$st")
   base=${raw% # bsl-cols=*}; [[ $raw =~ $NONCE_SUFFIX_SPACE_HASH_BSL_COLS_EQUALS_DIGITS_AT_END ]] || base=$raw
   # Same ownership test as scripts/install.sh.
   if [[ -z $base || ! ( $base =~ $OWNED_COMMAND_MENTIONS_CLAUDE_OR_LEGACY_BRAISENLY_STATUSLINE || $base == 'bash ~/.claude/statusline-dispatcher.sh' ) ]]; then
@@ -136,7 +140,8 @@ reconcile() {
   atomic_write "$st" "$new" "$before"
 }
 if [[ $action != get ]]; then
-  for _ in 1 2 3; do reconcile; [[ $? -eq 3 ]] || break; done
+  for _ in 1 2 3; do reconcile; r=$?; [[ $r -eq 3 ]] || break; done
+  [[ $r -eq 3 ]] && printf 'resets-toggle.sh: settings.json kept changing; refreshInterval/nonce not applied\n' >&2
 fi
 
 [[ $action == sync ]] && exit 0

@@ -60,11 +60,15 @@ function Get-Digest([string]$p) { (Get-FileHash -LiteralPath $p -Algorithm SHA25
 # must still have at the last instant; a mismatch returns 3.
 function Write-Atomic([string]$dst, [string]$text, [string]$digest = '') {
     $tmp = Join-Path (Split-Path -Parent $dst) ".$(Split-Path -Leaf $dst).$PID.$([guid]::NewGuid().ToString('N').Substring(0, 6))"
-    [IO.File]::WriteAllText($tmp, $text.Replace("`r`n", "`n") + "`n", $utf8)
-    if (Test-Path -LiteralPath $dst) { try { Get-Acl -LiteralPath $dst | Set-Acl -LiteralPath $tmp } catch { } }
-    if ($digest -and (Get-Digest $dst) -ne $digest) { Remove-Item -LiteralPath $tmp -Force; return 3 }
-    Move-Item -LiteralPath $tmp -Destination $dst -Force
-    return 0
+    # Move-Item errors are non-terminating by default: Stop makes a failed rename throw to the caller, and finally
+    # removes the temp file on every path.
+    try {
+        [IO.File]::WriteAllText($tmp, $text.Replace("`r`n", "`n") + "`n", $utf8)
+        if (Test-Path -LiteralPath $dst) { try { Get-Acl -LiteralPath $dst | Set-Acl -LiteralPath $tmp -ErrorAction Stop } catch { } }
+        if ($digest -and (Get-Digest $dst) -ne $digest) { return 3 }
+        Move-Item -LiteralPath $tmp -Destination $dst -Force -ErrorAction Stop
+        return 0
+    } finally { if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } }
 }
 function Read-Json([string]$p) { Get-Content -Raw -LiteralPath $p | ConvertFrom-Json -AsHashtable -DateKind String -ErrorAction Stop }
 function To-Json($o) { $o | ConvertTo-Json -Depth 100 }
@@ -91,11 +95,11 @@ if ($action -ceq 'url') {
     if ($err) { [Console]::Error.WriteLine($err) }
     $tail = $err -replace "[`r`n]", ' '
     if ($tail.Length -gt 200) { $tail = $tail.Substring($tail.Length - 200) }
-    $logDir = Join-Path $cfg $id.LAUNCHER_HOME; $log = Join-Path $logDir 'url-handler.log'
+    $logDir = Join-Path $cfg $id.LAUNCHER_HOME; $log = Resolve-Target (Join-Path $logDir 'url-handler.log')
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
     $stamp = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ', [Globalization.CultureInfo]::InvariantCulture)
     $lines = @(if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log }) + ("$stamp $rc" + $(if ($tail) { " $tail" }))
-    [void](Write-Atomic $log (($lines | Select-Object -Last 50) -join "`n"))
+    try { [void](Write-Atomic $log (($lines | Select-Object -Last 50) -join "`n")) } catch { [Console]::Error.WriteLine("resets-toggle.ps1: cannot write $log") }
     exit $rc
 }
 
@@ -130,7 +134,7 @@ function Sync-Settings {
     $st = Resolve-Target (Join-Path $cfg 'settings.json')
     if (-not (Test-Path -LiteralPath $st)) { return 0 }
     $before = Get-Digest $st
-    try { $s = Read-Json $st } catch { [Console]::Error.WriteLine("resets-toggle.ps1: $st is not valid JSON; left unchanged"); return 0 }
+    try { $s = Read-Json $st; if ($null -eq $s) { throw 'empty' } } catch { [Console]::Error.WriteLine("resets-toggle.ps1: $st is not valid JSON; left unchanged"); return 0 }
     $line = if ($s -is [Collections.IDictionary] -and $s['statusLine'] -is [Collections.IDictionary]) { $s['statusLine'] } else { $null }
     $raw = if ($line -and $line['command'] -is [string]) { $line['command'] } else { '' }
     $base = $raw -replace $NONCE_SUFFIX_SPACE_HASH_BSL_COLS_EQUALS_DIGITS_AT_END, ''
@@ -151,10 +155,11 @@ function Sync-Settings {
     $text = To-Json $s
     if ($text -ceq $beforeText) { return 0 }
     # ponytail: digest recheck only; concurrent CC write between recheck and move can be lost
-    return (Write-Atomic $st $text $before)
+    try { return (Write-Atomic $st $text $before) } catch { [Console]::Error.WriteLine("resets-toggle.ps1: cannot write $st; left unchanged"); return 0 }
 }
 if ($action -cne 'get') {
-    foreach ($try in 1..3) { if ((Sync-Settings) -ne 3) { break } }
+    foreach ($try in 1..3) { $r = Sync-Settings; if ($r -ne 3) { break } }
+    if ($r -eq 3) { [Console]::Error.WriteLine('resets-toggle.ps1: settings.json kept changing; refreshInterval/nonce not applied') }
 }
 
 if ($action -ceq 'sync') { exit 0 }
