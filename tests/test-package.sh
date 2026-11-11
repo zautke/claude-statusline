@@ -27,6 +27,9 @@ semver_ok "$(jq -r .version "$plugin/.claude-plugin/plugin.json")" || fail 'plug
 jq -e --arg m "$MARKETPLACE" --arg n "$PLUGIN_NAME" '.name==$m and (.plugins|length)==1 and .plugins[0].name==$n and .plugins[0].source=="."' \
   "$plugin/.claude-plugin/marketplace.json" >/dev/null || fail 'marketplace.json identity'
 jq -e '.skill_name=="configure-statusline" and (.evals|length)==4' "$plugin/skills/configure-statusline/evals/evals.json" >/dev/null || fail 'skill evals'
+# Reset-toggle identity keys exist (usage sites are asserted as they land).
+[[ ${RESETS_COMMAND_NAME:-} == statusline-resets ]] || fail 'identity RESETS_COMMAND_NAME'
+[[ ${URL_SCHEME:-} == claude-statusline ]] || fail 'identity URL_SCHEME'
 # Claude Code only: no other client's manifests ship.
 for m in plugin.json .codex-plugin .github/plugin .agents/plugins interface.json; do
   [[ ! -e $plugin/$m ]] || fail "non-Claude manifest present: $m"

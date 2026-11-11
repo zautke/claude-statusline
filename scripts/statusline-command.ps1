@@ -13,6 +13,8 @@ function Usage {
 
 if ($Help) { Usage; exit 0 }
 
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'config/constants.ps1')
+
 # Claude Code on Windows requires Git Bash. Reuse canonical renderer so both
 # entry points share validation, configuration, cache, and OAuth behavior.
 $bash = Get-Command bash -ErrorAction SilentlyContinue
@@ -446,7 +448,6 @@ if ($env:COLUMNS -match '^\d+$') { $columns = [int]$env:COLUMNS }
 # Native Windows without COLUMNS: the attached console's visible width (0 when no console is attached).
 if ($columns -le 0) { try { $columns = [Console]::WindowWidth } catch { $columns = 0 } }
 if ($columns -le 0) { Build; Assemble-Flat; Emit }
-. (Join-Path (Split-Path -Parent $PSScriptRoot) 'config/constants.ps1')
 $budget = [math]::Max(1, $columns - $STATUS_LINE_AREA_HORIZONTAL_MARGIN_CELLS - $fitReserve)
 # Stage 1: full bars.
 if (Try-Layouts) { Emit }
