@@ -41,9 +41,11 @@ function Invoke-Renderer([string[]]$argv = @(), [string]$stdin = $payload, [hash
     return (($out -split "`r?`n") | Where-Object { $_ -ne '' }) -join "`n"
 }
 function Render([int]$cols) { Invoke-Renderer -extraEnv @{ COLUMNS = $cols } }
+# Strip SGR and OSC 8 hyperlink sequences: what the terminal actually draws.
+function Strip([string]$s) { ($s -replace "$([char]27)\[[0-9;]*m", '') -replace $ANSI_OSC8_HYPERLINK_SEQUENCE_ESC_RIGHT_BRACKET_8_PARAMS_URI_TERMINATED_BY_ST_OR_BEL, '' }
 function Get-Cells([string]$s) {
     $n = 0
-    foreach ($ch in $s.ToCharArray()) { $cp = [int]$ch; $n += (($cp -ge 0x2E80 -and $cp -le 0xA4CF) -or ($cp -ge 0xAC00 -and $cp -le 0xD7A3) -or ($cp -ge 0xFF00 -and $cp -le 0xFF60)) ? 2 : 1 }
+    foreach ($ch in (Strip $s).ToCharArray()) { $cp = [int]$ch; $n += (($cp -ge 0x2E80 -and $cp -le 0xA4CF) -or ($cp -ge 0xAC00 -and $cp -le 0xD7A3) -or ($cp -ge 0xFF00 -and $cp -le 0xFF60)) ? 2 : 1 }
     return $n
 }
 function Get-Rows([string]$s) { @($s -split "`n") }
@@ -269,6 +271,65 @@ try {
         }
     }
     Set-Config '{bad json'
+
+    # No URL-handler marker under $ConfigDir, so the coloured line asserted earlier carries no link.
+    if ($col.Contains("$E]8")) { Fail 'link without URL-handler marker' }
+
+    # ---- Ctrl+click: OSC 8 links over the whole 5h and 7d slots. Colour on, outside tmux and WSL, marker present. ----
+    $O = "$E]8;"; $ST = "$E\"; $C = "$O;$ST"
+    function LCfg([string]$dir, [string]$json) { New-Item -ItemType Directory -Force $dir | Out-Null; [IO.File]::WriteAllText((Join-Path $dir 'statusline.json'), $json) }
+    function Mark([string]$dir) { New-Item -ItemType Directory -Force (Join-Path $dir 'claude-statusline') | Out-Null; [IO.File]::WriteAllText((Join-Path $dir 'claude-statusline/url-handler'), '') }
+    function Lr([string]$dir, [int]$cols, [hashtable]$envx = @{}) {
+        $e = @{ CLAUDE_CONFIG_DIR = $dir; COLUMNS = $cols; NO_COLOR = $null; TMUX = $null; WSL_DISTRO_NAME = $null }
+        foreach ($k in $envx.Keys) { $e[$k] = $envx[$k] }
+        Invoke-Renderer -extraEnv $e
+    }
+    function NLinks([string]$s) { ([regex]::Matches($s, [regex]::Escape("${O}id="))).Count }
+    $lhome = Join-Path $HomeDir '.claude-t'; $dhome = Join-Path $HomeDir '.claude'; Mark $lhome; Mark $dhome
+    $flatCfg = '{' + $cd + ',"segments":["model","five_hour","seven_day","fable"]}'
+    LCfg $lhome $flatCfg; LCfg $dhome $flatCfg
+    $O5 = "${O}id=bsl-5h;claude-statusline://toggle?slot=5h&profile=t$ST"; $O7 = "${O}id=bsl-7d;claude-statusline://toggle?slot=7d&profile=t$ST"
+    # Flat: the link opens before the label and closes after the glyph, before the separator.
+    $lk = Lr $lhome 400
+    $want = [regex]::Escape("$O5$E[38;5;240m5h") + '.*' + [regex]::Escape("⊟◂$E[0m$C$E[38;5;237m ● $E[0m$O7$E[38;5;240m7d") + '.*' + [regex]::Escape("⊟◂$E[0m$C$E[38;5;237m ● ")
+    if ($lk -notmatch $want) { Fail "link flat: $($lk -replace [char]27, '\e')" }
+    if ((NLinks $lk) -ne 2) { Fail "link flat: want 2 links, got $(NLinks $lk)" }
+    # Default config dir ~/.claude: no profile parameter.
+    $dl = Lr $dhome 400
+    if (-not $dl.Contains("${O}id=bsl-5h;claude-statusline://toggle?slot=5h$ST") -or -not $dl.Contains("${O}id=bsl-7d;claude-statusline://toggle?slot=7d$ST") -or $dl.Contains('profile=')) { Fail "link default dir: $($dl -replace [char]27, '\e')" }
+    # Stacked: each row links both slots under the same id; padding stays outside the link; separators still align.
+    LCfg $lhome ('{' + $cd + ',"segments":["five_hour","seven_day"],"fit":{"rows":2}}')
+    $ls2 = Lr $lhome (37 + $margin)
+    if ((Get-Rows $ls2).Count -ne 2) { Fail "link stacked: expected 2 rows: $($ls2 -replace [char]27, '\e')" }
+    $l1, $l2 = Get-Rows $ls2
+    foreach ($r in $l1, $l2) {
+        if ($r -notmatch ([regex]::Escape($O5) + '.*' + [regex]::Escape($C) + '.*' + [regex]::Escape($O7) + '.*' + [regex]::Escape($C)) -or (NLinks $r) -ne 2 -or $r.Contains(" $C")) { Fail "link stacked row: $($r -replace [char]27, '\e')" }
+    }
+    if (-not $l2.Contains("$C ")) { Fail "link stacked: no padding after a link: $($l2 -replace [char]27, '\e')" }
+    if (-not (Seps (Strip $l1)) -or (Seps (Strip $l1)) -ne (Seps (Strip $l2))) { Fail 'link stacked separators misaligned' }
+    # Fit regression: at every stage the linked render draws exactly what the unlinked one (TMUX) draws.
+    LCfg $lhome ('{' + $cd + ',"segments":["model","cwd","context","disk","five_hour","seven_day","fable"],"fit":{"rows":2}}')
+    $wf = Get-Cells (Lr $lhome 400 @{ TMUX = '1' })
+    $saw = ''
+    foreach ($cols in 400, ($wf + $margin), ($wf - 6 + $margin), 110, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10) {
+        $a = Lr $lhome $cols; $b = Lr $lhome $cols @{ TMUX = '1' }
+        # Controls: a drawn 5h (20%) or 7d (30%) slot carries its link; the unlinked render has none.
+        if (((Strip $a) -match '[23]0%' -and -not $a.Contains("${O}id=bsl-")) -or $b.Contains("$E]8")) { Fail "link fit ${cols}: linked/unlinked control failed" }
+        if ((Mask-Disk (Strip $a)) -cne (Mask-Disk (Strip $b))) { Fail "link fit ${cols}: drawn text differs:`n$(Strip $a)`n$(Strip $b)" }
+        $sb = Strip $b
+        $saw += if ($cols -eq 400) { 'W' } elseif ($sb.Contains('[') -and (Get-Rows $sb).Count -eq 2 -and -not $sb.Contains('(')) { 'L' } elseif ($sb.Contains('[')) { 'S' } else { 'B' }
+    }
+    if ($saw -notlike 'W*S*L*B') { Fail "link fit: stages not all covered (W wide, S shrink, L ladder, B bars off/floor): $saw" }
+    # Negatives: each condition alone removes every link (PASS = a normal render with no OSC 8 at all).
+    LCfg $lhome $flatCfg
+    function NoLink([string]$label, [string]$o) { if ($o -notlike '*5h*7d*' -or $o.Contains("$E]8")) { Fail "link negative ${label}: $($o -replace [char]27, '\e')" } }
+    foreach ($v in 'TMUX', 'WSL_DISTRO_NAME', 'NO_COLOR') { NoLink $v (Lr $lhome 400 @{ $v = '1' }) }
+    $nomark = Join-Path $HomeDir '.claude-nomark'; LCfg $nomark $flatCfg; NoLink 'marker-absent' (Lr $nomark 400)
+    foreach ($d in (Join-Path $Tmp 'x'), (Join-Path $HomeDir '.claude-bad/name'), (Join-Path $HomeDir '.claude-b@d'), (Join-Path $HomeDir 'claude-t')) { Mark $d; LCfg $d $flatCfg; NoLink "dir $d" (Lr $d 400) }
+    # The five_segment ladder step drops the whole 5h slot, link included.
+    LCfg $lhome ('{' + $cd + ',"segments":["five_hour","seven_day"],"fit":{"rows":1,"ladder":["five_segment"]}}')
+    $l5 = Lr $lhome 10
+    if ($l5.Contains('bsl-5h') -or $l5 -notmatch ([regex]::Escape($O7) + '.*7d.*' + [regex]::Escape($C)) -or (NLinks $l5) -ne 1 -or ([regex]::Matches($l5, [regex]::Escape($C))).Count -ne 1) { Fail "link five_segment: $($l5 -replace [char]27, '\e')" }
 
     if ((Invoke-Renderer -argv @('-Help')) -notlike 'Usage:*') { Fail 'usage' }
 

@@ -63,7 +63,9 @@ fallback=$(printf '%s' "$payload" | NO_COLOR=1 CLAUDE_STATUSLINE_DISABLE_REFRESH
 
 # Terminal fit: budget is COLUMNS minus Claude Code's status-area margin. Helpers count display cells per row.
 . "$ROOT/config/constants.sh"; margin=$STATUS_LINE_AREA_HORIZONTAL_MARGIN_CELLS
-cells() { sed $'s/\x1b\\[[0-9;]*m//g' <<<"$1" | jq -Rr length; }
+# Strip SGR and OSC 8 hyperlink sequences: what the terminal actually draws.
+strip() { sed -E $'s/\033\\[[0-9;]*m//g' <<<"$1" | sed -E "s/$ANSI_OSC8_HYPERLINK_SEQUENCE_ESC_RIGHT_BRACKET_8_PARAMS_URI_TERMINATED_BY_ST_OR_BEL//g"; }
+cells() { strip "$1" | jq -Rr length; }
 render() { printf '%s' "$payload" | COLUMNS=$1 NO_COLOR=1 CLAUDE_STATUSLINE_DISABLE_REFRESH=1 ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh"; }
 rows() { printf '%s\n' "$1" | wc -l | tr -d ' '; }
 row() { sed -n "${2}p" <<<"$1"; }
@@ -214,7 +216,6 @@ col=$(printf '%s' "$fix" | env -u NO_COLOR COLUMNS=400 CLAUDE_STATUSLINE_DISABLE
 # The whole coloured line, byte for byte; the ps1 twin asserts the same literal (model colour, bar gradient, SGR order).
 E=$'\033'
 want colour-line "$col" "${E}[1;38;5;75mClaude${E}[0m${E}[38;5;237m ● ${E}[0m${E}[38;5;240m5h${E}[0m [${E}[38;2;40;170;60m█${E}[38;2;68;169;51m█${E}[38;5;59m░░░░░░░░░░${E}[0m] (${E}[38;2;112;166;36m20%${E}[0m) ${E}[38;5;243m↻2h13m ⊟◂${E}[0m${E}[38;5;237m ● ${E}[0m${E}[38;5;240m7d${E}[0m [${E}[38;2;40;170;60m█${E}[38;2;68;169;51m█${E}[38;2;97;167;41m█${E}[38;2;130;165;30m█${E}[38;5;59m░░░░░░░░${E}[0m] (${E}[38;2;148;164;24m30%${E}[0m) ${E}[38;5;243m↻4d6h ⊟◂${E}[0m"
-
 # ---- exclusion ladder map. Segments pinned (no /tmp) so every machine renders the same stages. ----
 order=(resets disk_label ctx_int no_parens disk_int ctx_no_total no_free fable_short disk_value ctx_no_used fable_label fable_segment seven_label five_label ctx_label seven_segment five_segment)
 # Countdown keeps the reset text independent of the machine's time zone.
@@ -271,6 +272,63 @@ for ((k=0;k<=${#order[@]};k++)); do
   fi
 done
 printf '{bad json' >"$CLAUDE_CONFIG_DIR/statusline.json"
+
+# No URL-handler marker under $TMP/config, so the coloured line asserted earlier carries no link.
+[[ $col != *$'\033]8'* ]] || { printf 'link without URL-handler marker\n' >&2; exit 1; }
+
+# ---- Ctrl+click: OSC 8 links over the whole 5h and 7d slots. Colour on, outside tmux and WSL, marker present. ----
+O=$'\033]8;' ST=$'\033\\'; C="$O;$ST"
+lcfg() { mkdir -p "$1"; printf '%s' "$2" >"$1/statusline.json"; }
+mark() { mkdir -p "$1/claude-statusline"; : >"$1/claude-statusline/url-handler"; }
+lr() { # $1 config dir, $2 columns, then extra VAR=value env
+  local d=$1 c=$2; shift 2
+  printf '%s' "$payload" | env -u NO_COLOR -u TMUX -u WSL_DISTRO_NAME CLAUDE_CONFIG_DIR="$d" COLUMNS="$c" CLAUDE_STATUSLINE_DISABLE_REFRESH=1 "$@" ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh"
+}
+nlinks() { local s=$1 n=0; while [[ $s == *"${O}id="* ]]; do s=${s#*"${O}id="}; n=$((n+1)); done; printf '%s' $n; }
+lhome=$HOME/.claude-t; mark "$lhome"; mark "$HOME/.claude"
+flatcfg="{$cd_,\"segments\":[\"model\",\"five_hour\",\"seven_day\",\"fable\"]}"
+lcfg "$lhome" "$flatcfg"; lcfg "$HOME/.claude" "$flatcfg"
+O5="${O}id=bsl-5h;claude-statusline://toggle?slot=5h&profile=t$ST" O7="${O}id=bsl-7d;claude-statusline://toggle?slot=7d&profile=t$ST"
+# Flat: the link opens before the label and closes after the glyph, before the separator.
+lk=$(lr "$lhome" 400)
+[[ $lk == *"$O5${E}[38;5;240m5h"*"⊟◂${E}[0m$C${E}[38;5;237m ● ${E}[0m$O7${E}[38;5;240m7d"*"⊟◂${E}[0m$C${E}[38;5;237m ● "* ]] || { printf 'link flat: %q\n' "$lk" >&2; exit 1; }
+[[ $(nlinks "$lk") -eq 2 ]] || { printf 'link flat: want 2 links, got %s\n' "$(nlinks "$lk")" >&2; exit 1; }
+# Default config dir ~/.claude: no profile parameter.
+dl=$(lr "$HOME/.claude" 400)
+[[ $dl == *"${O}id=bsl-5h;claude-statusline://toggle?slot=5h$ST"* && $dl == *"${O}id=bsl-7d;claude-statusline://toggle?slot=7d$ST"* && $dl != *profile=* ]] || { printf 'link default dir: %q\n' "$dl" >&2; exit 1; }
+# Stacked: each row links both slots under the same id; padding stays outside the link; separators still align.
+lcfg "$lhome" "{$cd_,\"segments\":[\"five_hour\",\"seven_day\"],\"fit\":{\"rows\":2}}"
+ls2=$(lr "$lhome" $((37+margin)))
+[[ $(rows "$ls2") -eq 2 ]] || { printf 'link stacked: expected 2 rows: %q\n' "$ls2" >&2; exit 1; }
+l1=$(row "$ls2" 1) l2=$(row "$ls2" 2)
+for r in "$l1" "$l2"; do
+  [[ $r == *"$O5"*"$C"*"$O7"*"$C"* && $(nlinks "$r") -eq 2 && $r != *" $C"* ]] || { printf 'link stacked row: %q\n' "$r" >&2; exit 1; }
+done
+[[ $l2 == *"$C "* ]] || { printf 'link stacked: no padding after a link: %q\n' "$l2" >&2; exit 1; }
+[[ -n $(seps "$(strip "$l1")") && $(seps "$(strip "$l1")") == "$(seps "$(strip "$l2")")" ]] || { printf 'link stacked separators misaligned\n' >&2; exit 1; }
+# Fit regression: at every stage the linked render draws exactly what the unlinked one (TMUX) draws.
+lcfg "$lhome" "{$cd_,\"segments\":[\"model\",\"cwd\",\"context\",\"disk\",\"five_hour\",\"seven_day\",\"fable\"],\"fit\":{\"rows\":2}}"
+wf=$(cells "$(lr "$lhome" 400 TMUX=1)")
+saw=
+for c in 400 $((wf+margin)) $((wf-6+margin)) 110 100 90 80 70 60 50 40 30 20 10; do
+  a=$(lr "$lhome" "$c"); b=$(lr "$lhome" "$c" TMUX=1)
+  # Controls: a drawn 5h (20%) or 7d (30%) slot carries its link; the unlinked render has none.
+  [[ $b != *$'\033]8'* ]] && { [[ $(strip "$a") != *[23]0%* ]] || [[ $a == *"${O}id=bsl-"* ]]; } || { printf 'link fit %s: linked/unlinked control failed\n' "$c" >&2; exit 1; }
+  [[ $(mask_disk "$(strip "$a")") == "$(mask_disk "$(strip "$b")")" ]] || { printf 'link fit %s: drawn text differs:\n%s\n%s\n' "$c" "$(strip "$a")" "$(strip "$b")" >&2; exit 1; }
+  sb=$(strip "$b")
+  if [[ $c -eq 400 ]]; then saw+=W; elif [[ $sb == *"["* && $(rows "$sb") -eq 2 && $sb != *"("* ]]; then saw+=L; elif [[ $sb == *"["* ]]; then saw+=S; else saw+=B; fi
+done
+[[ $saw == W*S*L*B ]] || { printf 'link fit: stages not all covered (W wide, S shrink, L ladder, B bars off/floor): %s\n' "$saw" >&2; exit 1; }
+# Negatives: each condition alone removes every link (PASS = a normal render with no OSC 8 at all).
+lcfg "$lhome" "$flatcfg"
+nolink() { [[ $2 == *5h*7d* && $2 != *$'\033]8'* ]] || { printf 'link negative %s: %q\n' "$1" "$2" >&2; exit 1; }; }
+for v in TMUX=1 WSL_DISTRO_NAME=Ubuntu NO_COLOR=1; do nolink "$v" "$(lr "$lhome" 400 "$v")"; done
+lcfg "$HOME/.claude-nomark" "$flatcfg"; nolink marker-absent "$(lr "$HOME/.claude-nomark" 400)"
+for d in "$TMP/x" "$HOME/.claude-bad/name" "$HOME/.claude-b@d" "$HOME/claude-t"; do mark "$d"; lcfg "$d" "$flatcfg"; nolink "dir $d" "$(lr "$d" 400)"; done
+# The five_segment ladder step drops the whole 5h slot, link included.
+lcfg "$lhome" "{$cd_,\"segments\":[\"five_hour\",\"seven_day\"],\"fit\":{\"rows\":1,\"ladder\":[\"five_segment\"]}}"
+l5=$(lr "$lhome" 10)
+[[ $l5 != *bsl-5h* && $l5 == *"$O7"*7d*"$C"* && $(nlinks "$l5") -eq 1 && ${l5//"$C"/} == "${l5/"$C"/}" ]] || { printf 'link five_segment: %q\n' "$l5" >&2; exit 1; }
 
 ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh" --help | grep -q '^Usage:'
 
