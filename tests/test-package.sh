@@ -34,9 +34,11 @@ jq -e '.skill_name=="configure-statusline" and (.evals|length)==4' "$plugin/skil
 for m in plugin.json .codex-plugin .github/plugin .agents/plugins interface.json; do
   [[ ! -e $plugin/$m ]] || fail "non-Claude manifest present: $m"
 done
-for s in statusline-command statusline-launch install; do
+for s in statusline-command statusline-launch install resets-toggle; do
   [[ $(head -n 1 "$plugin/scripts/$s.sh") == '#!/usr/bin/env bash' ]] || fail "$s.sh shebang"
   [[ $(head -n 1 "$plugin/scripts/$s.ps1") == '#!/usr/bin/env pwsh' ]] || fail "$s.ps1 shebang"
+  grep -q '^Usage() {' "$plugin/scripts/$s.sh" || fail "$s.sh has no Usage()"
+  grep -q '^function Usage {' "$plugin/scripts/$s.ps1" || fail "$s.ps1 has no Usage"
 done
 
 # Negative: the org 4-part stamp and branch suffixes are rejected (PASS = rejected); marketplaces need plain SemVer.
