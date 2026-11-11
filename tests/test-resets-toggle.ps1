@@ -38,7 +38,7 @@ function Run {
     $o = & pwsh -NoProfile -NonInteractive -File $Script @args 2>$errFile
     $script:rc = $LASTEXITCODE
     $script:out = ($o | ForEach-Object { $_ }) -join "`n"
-    $script:err = ([string](Get-Content -Raw -LiteralPath $errFile)).TrimEnd("`r", "`n")
+    $script:err = "$(Get-Content -Raw -LiteralPath $errFile)".TrimEnd("`r", "`n")
 }
 function Expect([int]$wantRc, [string]$wantOut, [string]$label) {
     if ($script:rc -ne $wantRc -or $script:out -cne $wantOut) { Fail "${label}: want rc=$wantRc out=[$wantOut]; got rc=$($script:rc) out=[$($script:out)] err=[$($script:err)]" }
@@ -49,9 +49,11 @@ function SansNonce([string]$p) { $j = Read-Json $p; $j.statusLine.command = $j.s
 function Cmd { (Read-Json $st).statusLine.command }
 function Put([string]$p, [string]$text) { [IO.File]::WriteAllText($p, "$text`n") }
 function Cksum([string]$p) { (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash }
-# Write time, size and hash of everything under HOME: a rename-over or an edit changes it.
-function Snap { (Get-ChildItem -LiteralPath $HomeDir -Recurse -Force | Sort-Object FullName | ForEach-Object {
-    "$($_.FullName) $($_.LinkType) $($_.LastWriteTimeUtc.Ticks) $(if (-not $_.PSIsContainer -and -not $_.LinkType) { Cksum $_.FullName })" }) -join "`n" }
+# Every path under HOME, plus each file's write time and hash: a rename-over or an edit changes it. Directory write
+# times are left out: NTFS updates them lazily, after the test's own last write. HOME\AppData is pwsh's own cache
+# (it follows USERPROFILE), not the script's.
+function Snap { (Get-ChildItem -LiteralPath $HomeDir -Recurse -Force | Where-Object { -not $_.FullName.StartsWith((Join-Path $HomeDir 'AppData')) } | Sort-Object FullName | ForEach-Object {
+    "$($_.FullName) $($_.LinkType) $(if (-not $_.PSIsContainer -and -not $_.LinkType) { "$($_.LastWriteTimeUtc.Ticks) $(Cksum $_.FullName)" })" }) -join "`n" }
 function Reset-Home { Remove-Item -Recurse -Force -LiteralPath $HomeDir -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force $Cfg | Out-Null }
 function LineCount([string]$p) { @(Get-Content -LiteralPath $p).Count }
 
