@@ -19,6 +19,8 @@ export CLAUDE_CONFIG_DIR="$TMP/config"
 export XDG_CACHE_HOME="$TMP/cache"
 export CLAUDE_STATUSLINE_NO_LIVE_COLS=1
 export CLAUDE_STATUSLINE_DISABLE_WATCH=1
+# Pinned "now" for the reset-time countdown (B-spec payload fixtures).
+export CLAUDE_STATUSLINE_NOW=1794427200
 mkdir -p "$HOME/work" "$CLAUDE_CONFIG_DIR" "$XDG_CACHE_HOME/claude-statusline"
 # The cwd segment renders $PWD; pin it so ladder stages land on the same widths on every machine.
 cd "$HOME/work"
@@ -35,7 +37,7 @@ JSON
 printf '{"used_percentage":42,"resets_at":"2026-09-21T00:00:00Z","model":"Fable","fetched_at":%s}\n' "$(date +%s)" \
   >"$XDG_CACHE_HOME/claude-statusline/fable.json"
 
-payload='{"model":{"display_name":"Claude"},"context_window":{"used_percentage":25,"total_input_tokens":1000,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":20},"seven_day":{"used_percentage":30}}}'
+payload='{"model":{"display_name":"Claude"},"context_window":{"used_percentage":25,"total_input_tokens":1000,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":20,"resets_at":1794435180},"seven_day":{"used_percentage":30,"resets_at":1794794400}}}'
 plain=$(printf '%s' "$payload" | NO_COLOR=1 CLAUDE_STATUSLINE_DISABLE_REFRESH=1 ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh")
 
 [[ "$plain" == *"five ["* ]] || { printf 'missing custom five-hour label\n' >&2; exit 1; }
@@ -149,14 +151,62 @@ bad=$(render 90)
 # Negatives on the rest of the schema: each rejects the whole file (PASS = defaults render, custom label absent).
 for bad_cfg in '{"segments":["model","model"],"labels":{"five_hour":"custom"}}' '{"segments":["nope"],"labels":{"five_hour":"custom"}}' \
   '{"labels":{"five_hour":7}}' '{"widths":{"fable":0},"labels":{"five_hour":"custom"}}' '{"widths":{"fable":2.5},"labels":{"five_hour":"custom"}}' \
-  '{"fable":{"refresh_seconds":10},"labels":{"five_hour":"custom"}}'; do
+  '{"fable":{"refresh_seconds":10},"labels":{"five_hour":"custom"}}' \
+  '{"resets":"yes","labels":{"five_hour":"custom"}}' '{"resets":1,"labels":{"five_hour":"custom"}}' \
+  '{"resets_format":"Clock","labels":{"five_hour":"custom"}}' '{"resets_format":"relative","labels":{"five_hour":"custom"}}' \
+  '{"resets_format":["clock"],"labels":{"five_hour":"custom"}}' '{"fit":{"ladder":["Resets"]},"labels":{"five_hour":"custom"}}'; do
   printf '%s' "$bad_cfg" >"$CLAUDE_CONFIG_DIR/statusline.json"; o=$(render 400)
   [[ "$o" != *custom* && "$o" == *Claude*ctx*5h* ]] || { printf 'invalid config accepted: %s -> %s\n' "$bad_cfg" "$o" >&2; exit 1; }
 done
+# Positive control for the negatives above: the valid forms of the same keys keep the config.
+printf '%s' '{"resets":true,"resets_format":"countdown","fit":{"ladder":["resets"]},"labels":{"five_hour":"custom"}}' >"$CLAUDE_CONFIG_DIR/statusline.json"
+[[ "$(render 400)" == *custom* ]] || { printf 'valid resets config rejected\n' >&2; exit 1; }
+
+# ---- reset times on the 5h/7d slots: formats, glyph, placement. Two slots only, 400 columns (flat, unfitted). ----
+rp() { printf '{"rate_limits":{"five_hour":{"used_percentage":20%s},"seven_day":{"used_percentage":30%s}}}' "${1:+,\"resets_at\":$1}" "${2:+,\"resets_at\":$2}"; }
+rr() { # $1 extra config keys, $2 payload, $3 columns (default 400)
+  printf '{"segments":["five_hour","seven_day"]%s}' "${1:+,$1}" >"$CLAUDE_CONFIG_DIR/statusline.json"
+  printf '%s' "$2" | COLUMNS=${3:-400} NO_COLOR=1 TZ=UTC CLAUDE_STATUSLINE_DISABLE_REFRESH=1 ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh"
+}
+want() { [[ $2 == "$3" ]] || { printf 'resets %s: got [%s] want [%s]\n' "$1" "$2" "$3" >&2; exit 1; }; }
+B5='5h [██░░░░░░░░░░] (20%)' B7='7d [████░░░░░░░░] (30%)' cd_='"resets_format":"countdown"'
+fix=$(rp 1794435180 1794794400)
+want countdown "$(rr "$cd_" "$fix")" "$B5 ↻2h13m ⊟◂ ● $B7 ↻4d6h ⊟◂"
+want clock "$(rr '' "$fix")" "$B5 ↻22:13 ⊟◂ ● $B7 ↻M02 ⊟◂"
+want clock-explicit "$(rr '"resets":true,"resets_format":"clock"' "$fix")" "$B5 ↻22:13 ⊟◂ ● $B7 ↻M02 ⊟◂"
+# Day codes: Sunday 2026-11-15 00:00 UTC plus k days and k hours, one epoch per weekday.
+codes=(SU M T W R F SA)
+for k in 0 1 2 3 4 5 6; do
+  want "day $k" "$(rr '' "$(rp '' $((1794700800+k*86400+k*3600)))")" "$B5 ⊟◂ ● $B7 ↻${codes[k]}0$k ⊟◂"
+done
+# Round-up: :59:59 reaches the next minute (and Saturday 23:59:59 the next day); an exact minute stays.
+want roundup "$(rr '' "$(rp 1794751199 1795305599)")" "$B5 ↻14:00 ⊟◂ ● $B7 ↻SU00 ⊟◂"
+want exact "$(rr '' "$(rp 1794751140 '')")" "$B5 ↻13:59 ⊟◂ ● $B7 ⊟◂"
+# Countdown minutes, a sub-minute remainder rounding up, and a reset already past.
+want minutes "$(rr "$cd_" "$(rp 1794427500 1794427261)")" "$B5 ↻5m ⊟◂ ● $B7 ↻2m ⊟◂"
+want past "$(rr "$cd_" "$(rp 1794426600 '')")" "$B5 ↻0m ⊟◂ ● $B7 ⊟◂"
+want off "$(rr '"resets":false' "$fix")" "$B5 ⊞◂ ● $B7 ⊞◂"
+want off-countdown "$(rr '"resets":false,"resets_format":"countdown"' "$fix")" "$B5 ⊞◂ ● $B7 ⊞◂"
+# Absent 5h reset time: glyph only on 5h, 7d intact. Absent 5h window: the 7d slot alone, still correct.
+want no-five-reset "$(rr "$cd_" "$(rp '' 1794794400)")" "$B5 ⊟◂ ● $B7 ↻4d6h ⊟◂"
+want no-five-window "$(rr "$cd_" '{"rate_limits":{"seven_day":{"used_percentage":30,"resets_at":1794794400}}}')" "$B7 ↻4d6h ⊟◂"
+want non-number "$(rr "$cd_" '{"rate_limits":{"five_hour":{"used_percentage":20,"resets_at":"soon"},"seven_day":{"used_percentage":30,"resets_at":null}}}')" "$B5 ⊟◂ ● $B7 ⊟◂"
+# Stacked: reset text and glyph sit on the values row only; every separator column lines up.
+stk2=$(rr "$cd_,\"fit\":{\"rows\":2}" "$fix" $((37+margin)))
+[[ $(rows "$stk2") -eq 2 ]] || { printf 'resets stacked: expected 2 rows: %s\n' "$stk2" >&2; exit 1; }
+s1=$(row "$stk2" 1) s2=$(row "$stk2" 2)
+[[ $s1 != *↻* && $s1 != *⊟* && $s2 == *"(20%) ↻2h13m ⊟◂"*"(30%) ↻4d6h ⊟◂"* ]] || { printf 'resets stacked rows wrong:\n%s\n' "$stk2" >&2; exit 1; }
+seps() { local s=$1 i o=; for ((i=0;i<${#s};i++)); do [[ ${s:i:1} == ● ]]&&o+="$i "; done; printf '%s' "$o"; }
+[[ -n $(seps "$s1") && $(seps "$s1") == "$(seps "$s2")" ]] || { printf 'resets stacked separators misaligned: [%s] [%s]\n' "$(seps "$s1")" "$(seps "$s2")" >&2; exit 1; }
+# Colour: the reset text and glyph carry the value colour (SGR 38;5;243).
+printf '{"segments":["five_hour","seven_day"],%s}' "$cd_" >"$CLAUDE_CONFIG_DIR/statusline.json"
+col=$(printf '%s' "$fix" | env -u NO_COLOR COLUMNS=400 CLAUDE_STATUSLINE_DISABLE_REFRESH=1 ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh")
+[[ $col == *$'\033[38;5;243m↻2h13m ⊟◂\033[0m'* && $col == *$'\033[38;5;243m↻4d6h ⊟◂\033[0m'* ]] || { printf 'resets colour: value SGR missing: %q\n' "$col" >&2; exit 1; }
 
 # ---- exclusion ladder map. Segments pinned (no /tmp) so every machine renders the same stages. ----
-order=(disk_label ctx_int no_parens disk_int ctx_no_total no_free fable_short disk_value ctx_no_used fable_label fable_segment seven_label five_label ctx_label seven_segment five_segment)
-pin='"segments":["model","cwd","context","disk","five_hour","seven_day","fable"]'
+order=(resets disk_label ctx_int no_parens disk_int ctx_no_total no_free fable_short disk_value ctx_no_used fable_label fable_segment seven_label five_label ctx_label seven_segment five_segment)
+# Countdown keeps the reset text independent of the machine's time zone.
+pin='"segments":["model","cwd","context","disk","five_hour","seven_day","fable"],"resets_format":"countdown"'
 floor() { local steps= s; for s in "$@"; do steps+=${steps:+,}"\"$s\""; done; printf '{%s,"fit":{"rows":1,"ladder":[%s]}}' "$pin" "$steps" >"$CLAUDE_CONFIG_DIR/statusline.json"; render 10; }
 trim() { local s=$1; printf '%s' "${s%"${s##*[! ]}"}"; }
 # The disk segment is always the 4th in the pinned order; mask its number so a free-space change between two renders
@@ -171,6 +221,7 @@ expect_step() { # $1 step, $2 expected floor output
   local o; o=$(floor "$1"); [[ $(mask_disk "$o") == "$(mask_disk "$2")" ]] || { printf 'ladder %s: got [%s] want [%s]\n' "$1" "$o" "$2" >&2; exit 1; }
 }
 t=${base//(/}; t=${t//)/}
+t2=${base// ↻2h13m ⊟◂/}; expect_step resets "${t2// ↻4d6h ⊟◂/}"
 expect_step disk_label "${base//disk /}"
 expect_step ctx_int "${base//\/195.3K//195K}"
 expect_step no_parens "$t"
@@ -184,8 +235,8 @@ expect_step fable_segment "${base// ● Fable (42%)/}"
 expect_step seven_label "${base//7d (/(}"
 expect_step five_label "${base//5h (/(}"
 expect_step ctx_label "${base//ctx 1000B/1000B}"
-expect_step seven_segment "${base// ● 7d (30%)/}"
-expect_step five_segment "${base// ● 5h (20%)/}"
+expect_step seven_segment "${base// ● 7d (30%) ↻4d6h ⊟◂/}"
+expect_step five_segment "${base// ● 5h (20%) ↻2h13m ⊟◂/}"
 o=$(floor disk_int)
 [[ $o =~ $DISK_FREE_INTEGER_THEN_UNIT_THEN_SPACE_FREE ]] || { printf 'ladder disk_int: no integer disk value: %s\n' "$o" >&2; exit 1; }
 inum=${BASH_REMATCH[1]}

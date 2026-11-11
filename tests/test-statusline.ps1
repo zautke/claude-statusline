@@ -30,6 +30,8 @@ function Invoke-Renderer([string[]]$argv = @(), [string]$stdin = $payload, [hash
     $psi.Environment['CLAUDE_CONFIG_DIR'] = $ConfigDir; $psi.Environment['XDG_CACHE_HOME'] = $CacheDir
     $psi.Environment['CLAUDE_STATUSLINE_DISABLE_WATCH'] = '1'; $psi.Environment['CLAUDE_STATUSLINE_DISABLE_REFRESH'] = '1'
     $psi.Environment['NO_COLOR'] = '1'; $psi.Environment.Remove('COLUMNS') | Out-Null
+    # Pinned "now" for the reset-time countdown (B-spec payload fixtures).
+    $psi.Environment['CLAUDE_STATUSLINE_NOW'] = '1794427200'
     foreach ($k in $extraEnv.Keys) { if ($null -eq $extraEnv[$k]) { $psi.Environment.Remove($k) | Out-Null } else { $psi.Environment[$k] = [string]$extraEnv[$k] } }
     $psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
     $psi.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
@@ -55,7 +57,7 @@ function Get-Bracket([string]$s, [string]$after) { $i = $s.IndexOf($after); if (
 try {
     Set-Config '{"segments":["five_hour","fable","seven_day"],"labels":{"five_hour":"five","fable":"story","seven_day":"week"},"widths":{"five_hour":3,"fable":5,"seven_day":4}}'
     [IO.File]::WriteAllText($Fable, '{"used_percentage":42,"resets_at":"2026-09-21T00:00:00Z","model":"Fable","fetched_at":' + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + '}')
-    $script:payload = '{"model":{"display_name":"Claude"},"context_window":{"used_percentage":25,"total_input_tokens":1000,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":20},"seven_day":{"used_percentage":30}}}'
+    $script:payload = '{"model":{"display_name":"Claude"},"context_window":{"used_percentage":25,"total_input_tokens":1000,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":20,"resets_at":1794435180},"seven_day":{"used_percentage":30,"resets_at":1794794400}}}'
     $plain = Invoke-Renderer
 
     if ($plain -notlike '*five `[*') { Fail 'missing custom five-hour label' }
@@ -133,15 +135,78 @@ try {
     # Negatives on the rest of the schema: each rejects the whole file (PASS = defaults render, custom label absent).
     foreach ($badCfg in '{"segments":["model","model"],"labels":{"five_hour":"custom"}}', '{"segments":["nope"],"labels":{"five_hour":"custom"}}',
                         '{"labels":{"five_hour":7}}', '{"widths":{"fable":0},"labels":{"five_hour":"custom"}}', '{"widths":{"fable":2.5},"labels":{"five_hour":"custom"}}',
-                        '{"fable":{"refresh_seconds":10},"labels":{"five_hour":"custom"}}') {
+                        '{"fable":{"refresh_seconds":10},"labels":{"five_hour":"custom"}}',
+                        '{"resets":"yes","labels":{"five_hour":"custom"}}', '{"resets":1,"labels":{"five_hour":"custom"}}',
+                        '{"resets_format":"Clock","labels":{"five_hour":"custom"}}', '{"resets_format":"relative","labels":{"five_hour":"custom"}}',
+                        '{"resets_format":["clock"],"labels":{"five_hour":"custom"}}', '{"fit":{"ladder":["Resets"]},"labels":{"five_hour":"custom"}}') {
         Set-Config $badCfg
         $o = Render 400
         if ($o -like '*custom*' -or $o -notlike '*Claude*ctx*5h*') { Fail "invalid config accepted: $badCfg -> $o" }
     }
+    # Positive control for the negatives above: the valid forms of the same keys keep the config.
+    Set-Config '{"resets":true,"resets_format":"countdown","fit":{"ladder":["resets"]},"labels":{"five_hour":"custom"}}'
+    if ((Render 400) -notlike '*custom*') { Fail 'valid resets config rejected' }
+
+    # ---- reset times on the 5h/7d slots: formats, glyph, placement. Two slots only, 400 columns (flat, unfitted). ----
+    function Pay($five, $seven) {
+        $f = if ($null -ne $five) { ",`"resets_at`":$five" } else { '' }; $s = if ($null -ne $seven) { ",`"resets_at`":$seven" } else { '' }
+        '{"rate_limits":{"five_hour":{"used_percentage":20' + $f + '},"seven_day":{"used_percentage":30' + $s + '}}}'
+    }
+    function Rr([string]$extra, [string]$pay, [int]$cols = 400, [hashtable]$envx = @{}) {
+        Set-Config ('{"segments":["five_hour","seven_day"]' + ($extra ? ",$extra" : '') + '}')
+        $e = @{ COLUMNS = $cols }; foreach ($k in $envx.Keys) { $e[$k] = $envx[$k] }
+        Invoke-Renderer -stdin $pay -extraEnv $e
+    }
+    function Want([string]$label, [string]$got, [string]$want) { if ($got -cne $want) { Fail "resets ${label}: got [$got] want [$want]" } }
+    # .NET ignores TZ, so clock expectations come from the same local-time calls, computed independently here.
+    $ic = [Globalization.CultureInfo]::InvariantCulture
+    function Clock([long]$at, [string]$slot) {
+        $t = [DateTimeOffset]::FromUnixTimeSeconds([long]([math]::Ceiling($at / 60.0) * 60)).ToLocalTime()
+        if ($slot -eq '5h') { return '↻' + $t.ToString('HH:mm', $ic) }
+        return '↻' + $WEEKDAY_CODES_SUNDAY_FIRST_SU_M_T_W_R_F_SA[[int]$t.DayOfWeek] + $t.ToString('HH', $ic)
+    }
+    $B5 = '5h [██░░░░░░░░░░] (20%)'; $B7 = '7d [████░░░░░░░░] (30%)'; $cd = '"resets_format":"countdown"'
+    $fix = Pay 1794435180 1794794400
+    Want 'countdown' (Rr $cd $fix) "$B5 ↻2h13m ⊟◂ ● $B7 ↻4d6h ⊟◂"
+    $clockLine = "$B5 $(Clock 1794435180 '5h') ⊟◂ ● $B7 $(Clock 1794794400 '7d') ⊟◂"
+    Want 'clock' (Rr '' $fix) $clockLine
+    Want 'clock-explicit' (Rr '"resets":true,"resets_format":"clock"' $fix) $clockLine
+    # Day codes: Sunday 2026-11-15 00:00 UTC plus k days and k hours, one epoch per weekday; together they cover all 7 codes.
+    $seen = @{}
+    for ($k = 0; $k -le 6; $k++) {
+        $e = 1794700800 + $k * 86400 + $k * 3600; $c = Clock $e '7d'; $seen[$c.Substring(1, $c.Length - 3)] = 1
+        Want "day $k" (Rr '' (Pay $null $e)) "$B5 ⊟◂ ● $B7 $c ⊟◂"
+    }
+    if ($seen.Count -ne 7) { Fail "day codes not all distinct: $($seen.Keys -join ',')" }
+    # Round-up: :59:59 reaches the next minute (and Saturday 23:59:59 the next day); an exact minute stays.
+    if ((Clock 1794751199 '5h') -cne (Clock 1794751200 '5h') -or (Clock 1794751140 '5h') -ceq (Clock 1794751200 '5h')) { Fail 'clock round-up expectation' }
+    Want 'roundup' (Rr '' (Pay 1794751199 1795305599)) "$B5 $(Clock 1794751200 '5h') ⊟◂ ● $B7 $(Clock 1795305600 '7d') ⊟◂"
+    Want 'exact' (Rr '' (Pay 1794751140 $null)) "$B5 $(Clock 1794751140 '5h') ⊟◂ ● $B7 ⊟◂"
+    # Countdown minutes, a sub-minute remainder rounding up, and a reset already past.
+    Want 'minutes' (Rr $cd (Pay 1794427500 1794427261)) "$B5 ↻5m ⊟◂ ● $B7 ↻2m ⊟◂"
+    Want 'past' (Rr $cd (Pay 1794426600 $null)) "$B5 ↻0m ⊟◂ ● $B7 ⊟◂"
+    Want 'off' (Rr '"resets":false' $fix) "$B5 ⊞◂ ● $B7 ⊞◂"
+    Want 'off-countdown' (Rr '"resets":false,"resets_format":"countdown"' $fix) "$B5 ⊞◂ ● $B7 ⊞◂"
+    # Absent 5h reset time: glyph only on 5h, 7d intact. Absent 5h window: the 7d slot alone, still correct.
+    Want 'no-five-reset' (Rr $cd (Pay $null 1794794400)) "$B5 ⊟◂ ● $B7 ↻4d6h ⊟◂"
+    Want 'no-five-window' (Rr $cd '{"rate_limits":{"seven_day":{"used_percentage":30,"resets_at":1794794400}}}') "$B7 ↻4d6h ⊟◂"
+    Want 'non-number' (Rr $cd '{"rate_limits":{"five_hour":{"used_percentage":20,"resets_at":"soon"},"seven_day":{"used_percentage":30,"resets_at":null}}}') "$B5 ⊟◂ ● $B7 ⊟◂"
+    # Stacked: reset text and glyph sit on the values row only; every separator column lines up.
+    $stk2 = Rr "$cd,`"fit`":{`"rows`":2}" $fix (37 + $margin)
+    if ((Get-Rows $stk2).Count -ne 2) { Fail "resets stacked: expected 2 rows: $stk2" }
+    $s1, $s2 = Get-Rows $stk2
+    if ($s1 -match '[↻⊟]' -or $s2 -notlike '*(20%) ↻2h13m ⊟◂*(30%) ↻4d6h ⊟◂*') { Fail "resets stacked rows wrong:`n$stk2" }
+    function Seps([string]$s) { (@(for ($i = 0; $i -lt $s.Length; $i++) { if ($s[$i] -eq '●') { $i } }) -join ' ') }
+    if (-not (Seps $s1) -or (Seps $s1) -ne (Seps $s2)) { Fail "resets stacked separators misaligned: [$(Seps $s1)] [$(Seps $s2)]" }
+    # Colour: the reset text and glyph carry the value colour (SGR 38;5;243).
+    $col = Rr $cd $fix 400 @{ NO_COLOR = $null }
+    $V = "$([char]27)[38;5;243m"; $Z = "$([char]27)[0m"
+    if (-not $col.Contains("$V↻2h13m ⊟◂$Z") -or -not $col.Contains("$V↻4d6h ⊟◂$Z")) { Fail "resets colour: value SGR missing: $($col -replace [char]27, '\e')" }
 
     # ---- exclusion ladder map. Segments pinned (no /tmp) so every machine renders the same stages. ----
-    $order = @('disk_label', 'ctx_int', 'no_parens', 'disk_int', 'ctx_no_total', 'no_free', 'fable_short', 'disk_value', 'ctx_no_used', 'fable_label', 'fable_segment', 'seven_label', 'five_label', 'ctx_label', 'seven_segment', 'five_segment')
-    $pin = '"segments":["model","cwd","context","disk","five_hour","seven_day","fable"]'
+    $order = @('resets', 'disk_label','ctx_int', 'no_parens', 'disk_int', 'ctx_no_total', 'no_free', 'fable_short', 'disk_value', 'ctx_no_used', 'fable_label', 'fable_segment', 'seven_label', 'five_label', 'ctx_label', 'seven_segment', 'five_segment')
+    # Countdown keeps the reset text independent of the machine's time zone.
+    $pin = '"segments":["model","cwd","context","disk","five_hour","seven_day","fable"],"resets_format":"countdown"'
     function Floor([string[]]$steps) { Set-Config ('{' + $pin + ',"fit":{"rows":1,"ladder":[' + (($steps | ForEach-Object { "`"$_`"" }) -join ',') + ']}}'); return (Render 10) }
     # The disk segment is always the 4th in the pinned order; mask its number so a free-space change between two renders
     # does not fail a comparison. ponytail: a digit-count change (9.9G -> 10.0G) mid-run still shifts the widths by one.
@@ -152,7 +217,8 @@ try {
     $diskTok = "$($m.Groups[1].Value)$($m.Groups[2].Value)"
     # Each step on its own: exactly its declared change to the bars-off baseline, nothing else.
     $expect = [ordered]@{
-        disk_label    = $base.Replace('disk ', '')
+        resets        = $base.Replace(' ↻2h13m ⊟◂', '').Replace(' ↻4d6h ⊟◂', '')
+        disk_label   = $base.Replace('disk ', '')
         ctx_int       = $base.Replace('/195.3K', '/195K')
         no_parens     = $base.Replace('(', '').Replace(')', '')
         ctx_no_total  = $base.Replace('/195.3K', '')
@@ -165,8 +231,8 @@ try {
         seven_label   = $base.Replace('7d (', '(')
         five_label    = $base.Replace('5h (', '(')
         ctx_label     = $base.Replace('ctx 1000B', '1000B')
-        seven_segment = $base.Replace(' ● 7d (30%)', '')
-        five_segment  = $base.Replace(' ● 5h (20%)', '')
+        seven_segment = $base.Replace(' ● 7d (30%) ↻4d6h ⊟◂', '')
+        five_segment  = $base.Replace(' ● 5h (20%) ↻2h13m ⊟◂', '')
     }
     foreach ($s in $expect.Keys) {
         if ($expect[$s] -eq $base) { Fail "ladder ${s}: expectation is a no-op on baseline: $base" }
