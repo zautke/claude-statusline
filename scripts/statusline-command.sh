@@ -35,7 +35,8 @@ valid_config() {
     ((.widths//{})|to_entries|all(.value|type=="number" and floor==. and .>=1 and .<=128)) and
     ((.fit|if .==null then {} else . end)|type=="object") and
     ((.fit.reserve|if .==null then 0 else . end)|type=="number" and floor==. and .>=0 and .<=200) and ((.fit.min_bar_cells|if .==null then 5 else . end)|type=="number" and floor==. and .>=1 and .<=128) and ((.fit.resize_watch|if .==null then false else . end)|type=="boolean") and ((.fit.rows|if .==null then 1 else . end)|IN(1,2)) and
-    ((.fit.ladder|if .==null then [] else . end)|type=="array" and all(IN("disk_label","ctx_int","no_parens","disk_int","ctx_no_total","no_free","fable_short","disk_value","ctx_no_used","fable_label","fable_segment","seven_label","five_label","ctx_label","seven_segment","five_segment"))) and
+    ((.resets|if .==null then true else . end)|type=="boolean") and ((.resets_format|if .==null then "clock" else . end)|IN("clock","countdown")) and
+    ((.fit.ladder|if .==null then [] else . end)|type=="array" and all(IN("resets","disk_label","ctx_int","no_parens","disk_int","ctx_no_total","no_free","fable_short","disk_value","ctx_no_used","fable_label","fable_segment","seven_label","five_label","ctx_label","seven_segment","five_segment"))) and
     ((.fable.refresh_seconds//600)>=60) and ((.fable.max_stale_seconds//86400)>=60)
   ' "$config_file" >/dev/null 2>&1
 }
@@ -57,6 +58,8 @@ max_stale=$(get_cfg '.fable.max_stale_seconds' '86400')
 fable_model=$(get_cfg '.fable.model' '"Fable"')
 fit_reserve=$(get_cfg '.fit.reserve' '0')
 min_bar_cells=$(get_cfg '.fit.min_bar_cells' '5')
+# Reset-time mode: off | clock | countdown. No jq // on .resets: it treats false as absent.
+resets_mode=clock; [[ -n "$cfg" ]]&&resets_mode=$(jq -r 'if .resets==false then "off" else (.resets_format // "clock") end' "$cfg")
 
 oauth_token() {
   if [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then printf '%s' "$CLAUDE_CODE_OAUTH_TOKEN"; return; fi
@@ -213,9 +216,25 @@ _x=$(df -k /tmp 2>/dev/null|tail -1); if [[ $(awk '{print $1}'<<<"$_x") == tmpfs
 five_pct=; [[ $five != null && -n $five ]]&&five_pct=$(printf '%.0f' "$five")
 seven_pct=; [[ $seven != null && -n $seven ]]&&seven_pct=$(printf '%.0f' "$seven")
 fable_pct=; [[ $fable != null && -n $fable ]]&&fable_pct=$(printf '%.0f' "$fable")
+# Reset text per slot, once: resets_at rounded up to the minute, then clock (local HH:MM / day code + HH) or countdown.
+five_reset= seven_reset=
+if [[ $resets_mode != off ]]; then
+  now=${CLAUDE_STATUSLINE_NOW:-}; [[ $now =~ $NON_NEGATIVE_INTEGER_DIGITS_ONLY ]] || now=$(date +%s)
+  { IFS= read -r five_reset; IFS= read -r seven_reset; } < <(jq -r --arg mode "$resets_mode" --argjson now "$now" --arg g "$RESET_TIME_GLYPH_CLOCKWISE_OPEN_CIRCLE_ARROW" --arg days "${WEEKDAY_CODES_SUNDAY_FIRST_SU_M_T_W_R_F_SA[*]}" '
+    def txt($slot): if type != "number" then "" else ((./60|ceil)*60) as $at |
+      if $mode == "clock" then
+        if $slot == "5h" then $at|strflocaltime("%H:%M") else ($days|split(" "))[$at|strflocaltime("%w")|tonumber] + ($at|strflocaltime("%H")) end
+      else ((($at-$now)/60|ceil) as $c | if $c > 0 then $c else 0 end) as $m |
+        if $m >= 1440 then "\($m/1440|floor)d\($m%1440/60|floor)h" elif $m >= 60 then "\($m/60|floor)h\($m%60)m" else "\($m)m" end
+      end | $g + . end;
+    (.rate_limits.five_hour.resets_at|txt("5h")), (.rate_limits.seven_day.resets_at|txt("7d"))' <<<"$input" 2>/dev/null)
+fi
+# Appended to a 5h/7d slot's values: reset text and the click glyph, or the "hidden" glyph when resets are off.
+reset_tail() { if [[ $resets_mode == off ]]; then TAIL=" $value_color$RESETS_CLICK_GLYPH_HIDDEN_SQUARED_PLUS_THEN_LEFT_POINTING_SMALL_TRIANGLE$reset"; else TAIL=" $value_color${1:+$1 }$RESETS_CLICK_GLYPH_SHOWN_SQUARED_MINUS_THEN_LEFT_POINTING_SMALL_TRIANGLE$reset"; fi; }
+reset_tail "$five_reset"; five_tail=$TAIL; reset_tail "$seven_reset"; seven_tail=$TAIL
 
 # ---- exclusion ladder: ordered flags the builders consult; each step buys cells when nothing else fits ----
-default_ladder='disk_label ctx_int no_parens disk_int ctx_no_total no_free fable_short disk_value ctx_no_used fable_label fable_segment seven_label five_label ctx_label seven_segment five_segment'
+default_ladder='resets disk_label ctx_int no_parens disk_int ctx_no_total no_free fable_short disk_value ctx_no_used fable_label fable_segment seven_label five_label ctx_label seven_segment five_segment'
 ladder=$default_ladder; [[ -n $cfg ]]&&ladder=$(jq -r --arg d "$default_ladder" '(.fit.ladder // ($d|split(" ")))|join(" ")' "$cfg")
 fit_rows=$(get_cfg '.fit.rows' '1')
 # Ladder flags live in one space-delimited string (Bash 3.2 has no associative arrays): F=" a b ".
@@ -251,10 +270,10 @@ build() {
         if [[ $F != *" disk_value "* ]]; then if [[ $F == *" disk_int "* ]]; then bot="$value_color$free0$reset"; else bot="$value_color$free1$reset"; fi; [[ $F == *" no_free "* ]]||bot+=" free"; fi ;;
       five_hour)
         [[ -n $five_pct && $F != *" five_segment "* ]]||continue
-        [[ $F == *" five_label "* ]]||top="$label_color$L_five$reset"; bar "$five_pct" "$W_five"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$five_pct"; bot=$P ;;
+        [[ $F == *" five_label "* ]]||top="$label_color$L_five$reset"; bar "$five_pct" "$W_five"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$five_pct"; bot=$P; [[ $F == *" resets "* ]]||bot+=$five_tail ;;
       seven_day)
         [[ -n $seven_pct && $F != *" seven_segment "* ]]||continue
-        [[ $F == *" seven_label "* ]]||top="$label_color$L_seven$reset"; bar "$seven_pct" "$W_seven"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$seven_pct"; bot=$P ;;
+        [[ $F == *" seven_label "* ]]||top="$label_color$L_seven$reset"; bar "$seven_pct" "$W_seven"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$seven_pct"; bot=$P; [[ $F == *" resets "* ]]||bot+=$seven_tail ;;
       fable)
         [[ $F != *" fable_segment "* ]]||continue
         if [[ $F == *" fable_label "* ]]; then :; elif [[ $F == *" fable_short "* ]]; then top="$label_color${L_fable:0:1}$reset"; else top="$label_color$L_fable$reset"; fi

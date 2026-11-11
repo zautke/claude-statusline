@@ -24,7 +24,7 @@ Edit `statusline.json` atomically. Start from `statusline.example.json` when abs
 - `labels`: string labels keyed by segment.
 - `widths`: integer indicator lengths from 1 through 128.
 - `fit`: `rows` (1 or 2, default 1), `reserve` cells (0 through 200) held back from the `COLUMNS` budget, `min_bar_cells` (1 through 128), `ladder` (ordered subset of the exclusion steps below), and `resize_watch` boolean (default false). Fit order at every render with `rows: 1`: full bars; bars shrink uniformly down to the floor; bars drop and percentages take the bar heat colour; ladder steps apply one at a time until the line fits; then the floor. With `rows: 2` a second aligned row (labels and bars above, values below) is tried before any shrinking, and the ladder first runs with bars kept at the largest size that fits before bars drop. Rows are space-padded to the budget once any fitting engages.
-- Ladder steps, default order: `disk_label`, `ctx_int`, `no_parens`, `disk_int`, `ctx_no_total`, `no_free`, `fable_short`, `disk_value`, `ctx_no_used`, `fable_label`, `fable_segment`, `seven_label`, `five_label`, `ctx_label`, `seven_segment`, `five_segment`. Unknown names reject the config.
+- Ladder steps, default order: `resets`, `disk_label`, `ctx_int`, `no_parens`, `disk_int`, `ctx_no_total`, `no_free`, `fable_short`, `disk_value`, `ctx_no_used`, `fable_label`, `fable_segment`, `seven_label`, `five_label`, `ctx_label`, `seven_segment`, `five_segment`. Unknown names reject the config.
 - Percentages always take the gradient colour of their bar tip. `thresholds` and `colors` from older configs are ignored; remove them when touching the file.
 - `fable`: model display name, refresh interval of at least 60 seconds, and maximum stale interval of at least 60 seconds.
 

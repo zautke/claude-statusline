@@ -48,14 +48,14 @@ if (Test-Path -LiteralPath $configPath) {
     try {
         $cfg = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
         # All-or-nothing, as in the Bash renderer: any invalid fit field rejects the whole file.
-        $knownLadder = @('disk_label','ctx_int','no_parens','disk_int','ctx_no_total','no_free','fable_short','disk_value','ctx_no_used','fable_label','fable_segment','seven_label','five_label','ctx_label','seven_segment','five_segment')
+        $knownLadder = @('resets','disk_label','ctx_int','no_parens','disk_int','ctx_no_total','no_free','fable_short','disk_value','ctx_no_used','fable_label','fable_segment','seven_label','five_label','ctx_label','seven_segment','five_segment')
         function Test-Int($v) { return ($v -is [int] -or $v -is [long]) }
         if ($null -ne $cfg.fit) {
             if ($cfg.fit -isnot [System.Management.Automation.PSCustomObject]) { throw 'invalid fit' }
             if ($null -ne $cfg.fit.rows -and -not (Test-Int $cfg.fit.rows)) { throw 'invalid fit.rows' }
             if ($null -ne $cfg.fit.reserve -and -not (Test-Int $cfg.fit.reserve)) { throw 'invalid fit.reserve' }
             if ($null -ne $cfg.fit.min_bar_cells -and -not (Test-Int $cfg.fit.min_bar_cells)) { throw 'invalid fit.min_bar_cells' }
-            if ($null -ne $cfg.fit.ladder -and (-not ($cfg.fit.ladder -is [array]) -or @($cfg.fit.ladder | Where-Object { $_ -notin $knownLadder }).Count -gt 0)) { throw 'invalid fit.ladder' }
+            if ($null -ne $cfg.fit.ladder -and (-not ($cfg.fit.ladder -is [array]) -or @($cfg.fit.ladder | Where-Object { $_ -cnotin $knownLadder }).Count -gt 0)) { throw 'invalid fit.ladder' }
             if ($null -ne $cfg.fit.rows -and $cfg.fit.rows -notin 1, 2) { throw 'invalid fit.rows' }
             if ($null -ne $cfg.fit.reserve -and ($cfg.fit.reserve -lt 0 -or $cfg.fit.reserve -gt 200)) { throw 'invalid fit.reserve' }
             if ($null -ne $cfg.fit.min_bar_cells -and ($cfg.fit.min_bar_cells -lt 1 -or $cfg.fit.min_bar_cells -gt 128)) { throw 'invalid fit.min_bar_cells' }
@@ -76,6 +76,8 @@ if (Test-Path -LiteralPath $configPath) {
             if ($cfg.widths -isnot [System.Management.Automation.PSCustomObject]) { throw 'invalid widths' }
             foreach ($p in $cfg.widths.PSObject.Properties) { if (-not (Test-Int $p.Value) -or $p.Value -lt 1 -or $p.Value -gt 128) { throw 'invalid widths' } }
         }
+        if ($null -ne $cfg.resets -and $cfg.resets -isnot [bool]) { throw 'invalid resets' }
+        if ($null -ne $cfg.resets_format -and ($cfg.resets_format -isnot [string] -or $cfg.resets_format -cnotin 'clock', 'countdown')) { throw 'invalid resets_format' }
         if ($null -ne $cfg.fable.refresh_seconds -and $cfg.fable.refresh_seconds -lt 60) { throw 'invalid fable.refresh_seconds' }
         if ($null -ne $cfg.fable.max_stale_seconds -and $cfg.fable.max_stale_seconds -lt 60) { throw 'invalid fable.max_stale_seconds' }
         if ($cfg.fable.model) { $fableModel = [string]$cfg.fable.model }
@@ -86,6 +88,9 @@ if (Test-Path -LiteralPath $configPath) {
         if ($cfg.fable.max_stale_seconds) { $fableMaxStale = [int64]$cfg.fable.max_stale_seconds }
     } catch { $cfg = $null; $fableModel = 'Fable'; $fableLabel = 'Fable'; $fableWidth = 12; $fitReserve = 0; $minBarCells = 5; $resizeWatch = $false; $fableRefreshSeconds = 600; $fableMaxStale = 86400 }
 }
+# Reset-time mode: off | clock | countdown.
+$resetsMode = 'clock'
+if ($cfg) { if ($cfg.resets -eq $false) { $resetsMode = 'off' } elseif ($cfg.resets_format) { $resetsMode = [string]$cfg.resets_format } }
 # Labels, bar widths and segment order, as in the Bash renderer ($cfg is $null when the file is absent or invalid).
 $L = @{ context = 'ctx'; disk = 'disk'; tmp = '/tmp'; five_hour = '5h'; seven_day = '7d'; fable = 'Fable' }
 $Wd = @{ context = 12; disk = 12; tmp = 15; five_hour = 12; seven_day = 12; fable = 12 }
@@ -356,9 +361,31 @@ if ($IsWindows) {
 }
 $fivePct = if ($null -ne $rl5h) { [int][math]::Round($rl5h) } else { $null }
 $sevenPct = if ($null -ne $rl7d) { [int][math]::Round($rl7d) } else { $null }
+# Reset text per slot, once: resets_at rounded up to the minute, then clock (local HH:mm / day code + HH) or countdown.
+$nowEpoch = 0L
+if (-not ($env:CLAUDE_STATUSLINE_NOW -match $NON_NEGATIVE_INTEGER_DIGITS_ONLY -and [long]::TryParse($env:CLAUDE_STATUSLINE_NOW, [ref]$nowEpoch))) { $nowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
+function Get-ResetText($at, [string]$slot) {
+    if ($resetsMode -eq 'off' -or -not ($at -is [int] -or $at -is [long] -or $at -is [double] -or $at -is [decimal])) { return '' }
+    $up = [long]([math]::Ceiling([double]$at / 60) * 60)
+    if ($resetsMode -eq 'clock') {
+        $t = [DateTimeOffset]::FromUnixTimeSeconds($up).ToLocalTime(); $ic = [Globalization.CultureInfo]::InvariantCulture
+        $s = if ($slot -eq '5h') { $t.ToString('HH:mm', $ic) } else { $WEEKDAY_CODES_SUNDAY_FIRST_SU_M_T_W_R_F_SA[[int]$t.DayOfWeek] + $t.ToString('HH', $ic) }
+    } else {
+        $m = [math]::Max(0L, [long][math]::Ceiling(($up - $nowEpoch) / 60.0))
+        $s = if ($m -ge 1440) { "$([math]::Floor($m / 1440))d$([math]::Floor($m % 1440 / 60))h" } elseif ($m -ge 60) { "$([math]::Floor($m / 60))h$($m % 60)m" } else { "${m}m" }
+    }
+    return "$RESET_TIME_GLYPH_CLOCKWISE_OPEN_CIRCLE_ARROW$s"
+}
+# Appended to a 5h/7d slot's values: reset text and the click glyph, or the "hidden" glyph when resets are off.
+function Get-ResetTail([string]$text) {
+    if ($resetsMode -eq 'off') { return " ${C_VAL}${RESETS_CLICK_GLYPH_HIDDEN_SQUARED_PLUS_THEN_LEFT_POINTING_SMALL_TRIANGLE}${R}" }
+    return " ${C_VAL}$($text ? "$text " : '')${RESETS_CLICK_GLYPH_SHOWN_SQUARED_MINUS_THEN_LEFT_POINTING_SMALL_TRIANGLE}${R}"
+}
+$fiveTail = Get-ResetTail (Get-ResetText $j.rate_limits.five_hour.resets_at '5h')
+$sevenTail = Get-ResetTail (Get-ResetText $j.rate_limits.seven_day.resets_at '7d')
 
 # ---- exclusion ladder: ordered flags the builders consult; each step buys cells when nothing else fits ----
-$defaultLadder = @('disk_label','ctx_int','no_parens','disk_int','ctx_no_total','no_free','fable_short','disk_value','ctx_no_used','fable_label','fable_segment','seven_label','five_label','ctx_label','seven_segment','five_segment')
+$defaultLadder = @('resets','disk_label','ctx_int','no_parens','disk_int','ctx_no_total','no_free','fable_short','disk_value','ctx_no_used','fable_label','fable_segment','seven_label','five_label','ctx_label','seven_segment','five_segment')
 $ladder = $defaultLadder; $fitRows = 1
 if ($cfg) {
     if ($cfg.fit.ladder -is [array]) { $ladder = @($cfg.fit.ladder) }
@@ -400,11 +427,13 @@ function Build {
                 if ($null -eq $fivePct -or $F['five_segment']) { continue }
                 if (-not $F['five_label']) { $top = "${C_LABEL}$($L['five_hour'])${R}" }
                 $top = Add-Bar $top (Get-FitBar $fivePct $Wd['five_hour']); $bot = Get-Paren (Format-PctText $fivePct)
+                if (-not $F['resets']) { $bot += $fiveTail }
             }
             'seven_day' {
                 if ($null -eq $sevenPct -or $F['seven_segment']) { continue }
                 if (-not $F['seven_label']) { $top = "${C_LABEL}$($L['seven_day'])${R}" }
                 $top = Add-Bar $top (Get-FitBar $sevenPct $Wd['seven_day']); $bot = Get-Paren (Format-PctText $sevenPct)
+                if (-not $F['resets']) { $bot += $sevenTail }
             }
             'fable' {
                 if ($F['fable_segment']) { continue }
