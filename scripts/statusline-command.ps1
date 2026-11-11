@@ -232,6 +232,18 @@ $C_EMPTY = "$ESC[38;5;59m"              # medium gray empty cells
 # NO_COLOR (https://no-color.org): plain text, as in the Bash renderer.
 $noColor = [bool]$env:NO_COLOR
 if ($noColor) { $R = ''; $C_MODEL = ''; $C_LABEL = ''; $C_SEP = ''; $C_VAL = ''; $C_EMPTY = '' }
+# Ctrl+click links (OSC 8) over the whole 5h and 7d slots, built once. None under tmux, WSL or NO_COLOR, without the
+# URL-handler marker, or unless the config dir is ~/.claude or ~/.claude-<name> (then &profile=<name>).
+$id = ConvertFrom-StringData (Get-Content -Raw -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'config/identity.env'))
+$link5 = ''; $link7 = ''; $linkClose = ''; $linkQuery = $null
+$cfgFull = [IO.Path]::GetFullPath($configDir).TrimEnd('\', '/'); $homeFull = [IO.Path]::GetFullPath($HOME).TrimEnd('\', '/')
+if ($cfgFull -eq [IO.Path]::Combine($homeFull, '.claude')) { $linkQuery = '' }
+elseif ([IO.Path]::GetDirectoryName($cfgFull) -eq $homeFull -and [IO.Path]::GetFileName($cfgFull) -cmatch $CONFIG_DIR_LEAF_DOT_CLAUDE_HYPHEN_PROFILE_NAME_LETTERS_DIGITS_DOT_UNDERSCORE_HYPHEN) { $linkQuery = "&profile=$($Matches[1])" }
+if ($null -ne $linkQuery -and -not ($env:TMUX -or $env:WSL_DISTRO_NAME -or $noColor) -and (Test-Path -LiteralPath (Join-Path $cfgFull "$($id.LAUNCHER_HOME)/url-handler"))) {
+    $linkClose = "$ESC]8;;$ESC\"
+    $link5 = "$ESC]8;id=bsl-5h;$($id.URL_SCHEME)://toggle?slot=5h$linkQuery$ESC\"
+    $link7 = "$ESC]8;id=bsl-7d;$($id.URL_SCHEME)://toggle?slot=7d$linkQuery$ESC\"
+}
 
 
 function Get-CellColor([int]$pos) {
@@ -303,7 +315,7 @@ function Test-Wide([int]$cp) {
             ($cp -ge 0x1F300 -and $cp -le 0x1FAFF) -or ($cp -ge 0x20000 -and $cp -le 0x3FFFD))
 }
 function Get-Cells([string]$s) {
-    $plain = $s -replace "$ESC\[[0-9;]*m", ''
+    $plain = ($s -replace "$ESC\[[0-9;]*m", '') -replace $ANSI_OSC8_HYPERLINK_SEQUENCE_ESC_RIGHT_BRACKET_8_PARAMS_URI_TERMINATED_BY_ST_OR_BEL, ''
     $n = 0
     for ($i = 0; $i -lt $plain.Length; $i++) {
         $cp = [char]::ConvertToUtf32($plain, $i)
@@ -401,6 +413,7 @@ function Add-Bar([string]$top, [string]$bar) { if ($bar) { return ($top ? "$top 
 function Build {
     $script:segTop = [System.Collections.Generic.List[string]]::new()
     $script:segBot = [System.Collections.Generic.List[string]]::new()
+    $script:segLink = [System.Collections.Generic.List[string]]::new()
     foreach ($s in $segList) {
         $top = ''; $bot = ''
         switch ($s) {
@@ -446,18 +459,22 @@ function Build {
         }
         if (-not ($top + $bot)) { continue }
         $script:segTop.Add($top); $script:segBot.Add($bot)
+        $script:segLink.Add($(switch ($s) { 'five_hour' { $link5 } 'seven_day' { $link7 } default { '' } }))
     }
 }
+# Wraps $text in link $open; empty text or no link leaves it bare.
+function Add-Link([string]$open, [string]$text) { if ($open -and $text) { return "$open$text$linkClose" } else { return $text } }
 # flat: one row, "top bot" per segment. stacked: two rows, each segment padded to max(top,bot) so columns align.
 function Assemble-Flat {
-    $parts = for ($i = 0; $i -lt $segTop.Count; $i++) { $t = $segTop[$i]; $b = $segBot[$i]; if ($t -and $b) { "$t $b" } else { "$t$b" } }
+    $parts = for ($i = 0; $i -lt $segTop.Count; $i++) { $t = $segTop[$i]; $b = $segBot[$i]; Add-Link $segLink[$i] ($(if ($t -and $b) { "$t $b" } else { "$t$b" })) }
     $script:row1 = $parts -join (Get-Sep); $script:row2 = ''
 }
 function Assemble-Stacked {
     $r1 = @(); $r2 = @()
     for ($i = 0; $i -lt $segTop.Count; $i++) {
         $t = $segTop[$i]; $b = $segBot[$i]; $wt = Get-Cells $t; $wb = Get-Cells $b; $w = [math]::Max($wt, $wb)
-        $r1 += $t + (' ' * ($w - $wt)); $r2 += $b + (' ' * ($w - $wb))
+        # Padding stays outside the link.
+        $r1 += (Add-Link $segLink[$i] $t) + (' ' * ($w - $wt)); $r2 += (Add-Link $segLink[$i] $b) + (' ' * ($w - $wb))
     }
     $script:row1 = $r1 -join (Get-Sep); $script:row2 = $r2 -join (Get-Sep)
     # Claude Code trims leading whitespace per row; pad row starts with U+2800 (renders blank, counts one cell).

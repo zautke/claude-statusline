@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -u
 
+_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck source=../config/constants.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/config/constants.sh"
+. "$_root/config/constants.sh"
+# shellcheck source=../config/load-identity.sh
+. "$_root/config/load-identity.sh"; load_identity "$_root/config/identity.env"
 
 Usage() {
   printf '%s\n' 'Usage: statusline-command.sh [-h|--help] [-r|--refresh-fable]'
@@ -140,6 +143,16 @@ input=$(cat)
 [[ -e $cache_dir/trace ]] && printf '%s render COLUMNS=%s live=%s\n' "$(date +%s.%N)" "${COLUMNS:-}" "${live_cols:-}" >>"$cache_dir/trace"
 if [[ -n ${NO_COLOR:-} ]]; then reset= model_color= label_color= sep_color= value_color= empty_color=
 else reset=$'\033[0m'; model_color=$'\033[1;38;5;75m'; label_color=$'\033[38;5;240m'; sep_color=$'\033[38;5;237m'; value_color=$'\033[38;5;243m'; empty_color=$'\033[38;5;59m'; fi
+# Ctrl+click links (OSC 8) over the whole 5h and 7d slots, built once. None under tmux, WSL or NO_COLOR, without the
+# URL-handler marker, or unless the config dir is ~/.claude or ~/.claude-<name> (then &profile=<name>).
+link5= link7= link_close=; _d=${config_dir%/} _q=-
+if [[ $_d == "$HOME/.claude" ]]; then _q=; elif [[ ${_d%/*} == "$HOME" && ${_d##*/} =~ $CONFIG_DIR_LEAF_DOT_CLAUDE_HYPHEN_PROFILE_NAME_LETTERS_DIGITS_DOT_UNDERSCORE_HYPHEN ]]; then _q="&profile=${BASH_REMATCH[1]}"; fi
+if [[ $_q != - && -z ${TMUX+x}${WSL_DISTRO_NAME+x}${NO_COLOR:-} && -e $_d/$LAUNCHER_HOME/url-handler ]]; then
+  link_close=$'\033]8;;\033\\'
+  link5=$'\033]8;id=bsl-5h;'"$URL_SCHEME://toggle?slot=5h$_q"$'\033\\'
+  link7=$'\033]8;id=bsl-7d;'"$URL_SCHEME://toggle?slot=7d$_q"$'\033\\'
+fi
+unset _d _q
 
 # ${#var} must count characters, not bytes: pick a UTF-8 locale if the host left us in a byte locale.
 _g='█'; if ((${#_g}!=1)); then for _l in C.UTF-8 en_US.UTF-8; do LC_ALL=$_l; ((${#_g}==1))&&break; done; fi
@@ -177,7 +190,12 @@ utf8_cp() { local LC_ALL=C c=$1 b0 b1 b2 b3; printf -v b0 '%d' "'${c:0:1}"; ((b0
     3) printf -v b1 '%d' "'${c:1:1}"; printf -v b2 '%d' "'${c:2:1}"; ((b1<0))&&b1=$((b1+256)); ((b2<0))&&b2=$((b2+256)); cp=$(((b0&0x0F)<<12|(b1&0x3F)<<6|(b2&0x3F)));;
     *) printf -v b1 '%d' "'${c:1:1}"; printf -v b2 '%d' "'${c:2:1}"; printf -v b3 '%d' "'${c:3:1}"; ((b1<0))&&b1=$((b1+256)); ((b2<0))&&b2=$((b2+256)); ((b3<0))&&b3=$((b3+256)); cp=$(((b0&0x07)<<18|(b1&0x3F)<<12|(b2&0x3F)<<6|(b3&0x3F)));; esac; }
 cells() {
-  local s=$1 pre rest
+  local s=$1 pre rest a b o=$'\033]8;' st=$'\033\\' bel=$'\a'
+  # OSC 8 hyperlinks: drop ESC ] 8 ; params ; uri through its ST (ESC \) or BEL, whichever comes first.
+  while [[ $s == *"$o"* ]]; do
+    pre=${s%%"$o"*}; rest=${s#*"$o"}; a=${rest#*"$st"}; b=${rest#*"$bel"}
+    if [[ $a != "$rest" && ( $b == "$rest" || ${#a} -ge ${#b} ) ]]; then s=$pre$a; elif [[ $b != "$rest" ]]; then s=$pre$b; else break; fi
+  done
   while [[ $s == *$'\033['*m* ]]; do pre=${s%%$'\033['*}; rest=${s#*$'\033['}; s=$pre${rest#*m}; done
   N=${#s}; count_wide "$s"; N=$((N+W))
 }
@@ -246,7 +264,7 @@ pct_paren() { pct_text "$1"; paren "$PCT"; }               # sets P
 # Builders fill seg_top[] (label + bar) and seg_bot[] (values). A segment with both empty is omitted.
 build() {
   local s top bot used total pct free1 free0 L W
-  seg_top=() seg_bot=()
+  seg_top=() seg_bot=() seg_link=()
   for s in "${seg_list[@]}"; do
     top= bot=
     case $s in
@@ -281,16 +299,20 @@ build() {
     esac
     [[ -n $top$bot ]]||continue
     seg_top+=("$top"); seg_bot+=("$bot")
+    case $s in five_hour) seg_link+=("$link5");; seven_day) seg_link+=("$link7");; *) seg_link+=("");; esac
   done
 }
+# Wraps text $2 in link $1 (sets LNK); empty text or no link leaves it bare.
+wrap_link() { LNK=$2; [[ -n $1 && -n $2 ]]&&LNK=$1$2$link_close; }
 # flat: one row, "top bot" per segment. stacked: two rows, each segment padded to max(top,bot) so columns align.
-assemble_flat() { local i part out=; for i in "${!seg_top[@]}"; do part=${seg_top[i]}; [[ -n $part && -n ${seg_bot[i]} ]]&&part+=' '; part+=${seg_bot[i]}; out+=${out:+$sep}$part; done; row1=$out row2=; }
+assemble_flat() { local i part out=; for i in "${!seg_top[@]}"; do part=${seg_top[i]}; [[ -n $part && -n ${seg_bot[i]} ]]&&part+=' '; part+=${seg_bot[i]}; wrap_link "${seg_link[i]}" "$part"; out+=${out:+$sep}$LNK; done; row1=$out row2=; }
 assemble_stacked() {
   local i t b wt wb w pad r1= r2=
   for i in "${!seg_top[@]}"; do
     t=${seg_top[i]} b=${seg_bot[i]}; cells "$t"; wt=$N; cells "$b"; wb=$N; w=$((wt>wb?wt:wb))
-    printf -v pad '%*s' $((w-wt)) ''; r1+=${r1:+$sep}$t$pad
-    printf -v pad '%*s' $((w-wb)) ''; r2+=${r2:+$sep}$b$pad
+    # Padding stays outside the link.
+    wrap_link "${seg_link[i]}" "$t"; printf -v pad '%*s' $((w-wt)) ''; r1+=${r1:+$sep}$LNK$pad
+    wrap_link "${seg_link[i]}" "$b"; printf -v pad '%*s' $((w-wb)) ''; r2+=${r2:+$sep}$LNK$pad
   done
   # Claude Code trims leading whitespace per row; pad row starts with U+2800 (renders blank, counts one cell).
   local lead; lead=${r1%%[! ]*}; r1=${lead// /⠀}${r1:${#lead}}; lead=${r2%%[! ]*}; r2=${lead// /⠀}${r2:${#lead}}
