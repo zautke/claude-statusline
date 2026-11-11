@@ -31,6 +31,10 @@ $OWNED_SETTINGS_USER_30_SANS_NONCE='{"model":"opus","statusLine":{"type":"comman
 $UNOWNED_SETTINGS='{"statusLine":{"type":"command","command":"echo mine"}}'
 $NONCE_EPOCH_MS=' # bsl-cols=[0-9]{13,}$'
 $LOG_LINE_OK='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z 0$'
+$LOG_LINE_FAIL='^[0-9TZ:-]{20} 1 resets-toggle\.(sh|ps1): .*left unchanged$'
+$LONG_PROFILE_NAME='abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij'
+$LEGACY_DISPATCHER_COMMAND='bash ~/.claude/statusline-dispatcher.sh'
+$LEGACY_BRAISENLY_COMMAND='bash ~/braisenly-statusline/scripts/statusline-dispatcher.sh # bsl-cols=100'
 
 # ---- helpers ----
 function Run {
@@ -179,12 +183,50 @@ try {
     Put $sl '{not json'
     Neg 1 'invalid statusline.json' --set off
     Neg 1 'invalid statusline.json get' --get
+    # Two JSON documents are not one config object.
+    Put $sl '{} {}'
+    Neg 1 'multi-document statusline.json' --set off
+    # Windows only: a reader without FILE_SHARE_DELETE (a concurrent render) makes the rename fail. Exit 1, file and
+    # directory unchanged, no temp file left behind.
+    Put $sl '{"resets":true}'
+    $held = [IO.File]::Open($sl, 'Open', 'Read', 'Read')
+    try { Neg 1 'statusline.json held open' --set off } finally { $held.Dispose() }
+
+    # --url failure: the inner exit code propagates and the stderr tail is logged.
+    $work = Join-Path $HomeDir '.claude-work'
+    Put (Join-Path $work 'statusline.json') '{not json'
+    Run --url 'claude-statusline://toggle?slot=5h&profile=work'
+    if ($script:rc -ne 1 -or $script:out -or -not $script:err.Contains('is not a JSON object; left unchanged')) { Fail "url failure: rc=$($script:rc) out=[$($script:out)] err=[$($script:err)]" }
+    $l = Get-Content -LiteralPath (Join-Path $work 'claude-statusline/url-handler.log') -Tail 1
+    if ($l -cnotmatch $LOG_LINE_FAIL) { Fail "url failure log: $l" }
+    # A long profile path makes stderr longer than 200 characters: the log keeps only its last 200.
+    $longDir = Join-Path $HomeDir ".claude-$LONG_PROFILE_NAME"; New-Item -ItemType Directory $longDir | Out-Null
+    Put (Join-Path $longDir 'statusline.json') '{not json'
+    Run --url "claude-statusline://toggle?slot=7d&profile=$LONG_PROFILE_NAME"
+    $l = Get-Content -LiteralPath (Join-Path $longDir 'claude-statusline/url-handler.log') -Tail 1
+    if ($script:rc -ne 1 -or $script:err.Length -le 200 -or $l.Length -ne 223 -or -not $l.EndsWith(' left unchanged')) { Fail "url failure tail cut: rc=$($script:rc) len=$($l.Length) [$l]" }
 
     # Unowned statusLine: statusline.json written, settings.json byte-identical, note appended.
     Put $sl '{"resets":true}'; Put $st $UNOWNED_SETTINGS; $before = Cksum $st
     Run --set off; Expect 0 "$OFF$UNOWNED_NOTE" 'unowned'
     if ((Json $sl) -cne '{"resets":false}') { Fail 'unowned statusline.json not written' }
     if ((Cksum $st) -cne $before) { Fail 'unowned settings.json changed' }
+    # An empty command and a non-object settings root are unowned too.
+    foreach ($s in '{"statusLine":{"type":"command","command":""}}', '[1]') {
+        Put $st $s; $before = Cksum $st
+        Run --set toggle; if ($script:rc -ne 0 -or -not $script:out.EndsWith($UNOWNED_NOTE)) { Fail "unowned [$s]: rc=$($script:rc) out=[$($script:out)] err=[$($script:err)]" }
+        if ((Cksum $st) -cne $before) { Fail "unowned [$s] settings.json changed" }
+    }
+    # Invalid settings.json: warned on stderr, left byte-identical; statusline.json still written, exit 0.
+    Put $sl '{"resets":true}'; Put $st '{not json'; $before = Cksum $st
+    Run --set off; Expect 0 $OFF 'invalid settings.json'
+    if (-not $script:err.Contains('not valid JSON; left unchanged') -or (Cksum $st) -cne $before -or (Json $sl) -cne '{"resets":false}') { Fail "invalid settings.json: err=[$($script:err)]" }
+    # Legacy commands (the old dispatcher, the braisenly-statusline name) are owned: refreshInterval is managed.
+    foreach ($c in $LEGACY_DISPATCHER_COMMAND, $LEGACY_BRAISENLY_COMMAND) {
+        Put $st ([ordered]@{ statusLine = [ordered]@{ type = 'command'; command = $c } } | ConvertTo-Json -Depth 5); Put $sl '{}'
+        Run --format countdown; Expect 0 $ON_COUNTDOWN "legacy owned [$c]"
+        if ((Read-Json $st).statusLine.refreshInterval -ne 60) { Fail "legacy owned [$c]: $(Json $st)" }
+    }
 
     # Usage is first-class: -h prints it on stdout, exit 0.
     Run -h; if ($script:rc -ne 0 -or -not $script:out.StartsWith('Usage:')) { Fail "help: rc=$($script:rc) out=[$($script:out)]" }

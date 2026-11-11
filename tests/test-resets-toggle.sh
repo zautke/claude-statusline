@@ -37,6 +37,10 @@ OWNED_SETTINGS_USER_30_SANS_NONCE='{"model":"opus","statusLine":{"type":"command
 UNOWNED_SETTINGS='{"statusLine":{"type":"command","command":"echo mine"}}'
 NONCE_EPOCH_MS=' # bsl-cols=[0-9]{13,}$'
 LOG_LINE_OK='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z 0$'
+LOG_LINE_FAIL='^[0-9TZ:-]{20} 1 resets-toggle\.(sh|ps1): .*left unchanged$'
+LONG_PROFILE_NAME='abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij'
+LEGACY_DISPATCHER_COMMAND='bash ~/.claude/statusline-dispatcher.sh'
+LEGACY_BRAISENLY_COMMAND='bash ~/braisenly-statusline/scripts/statusline-dispatcher.sh # bsl-cols=100'
 
 # ---- helpers ----
 run() { rc=0; out=$("$BASH" "$script" "$@" 2>"$temp/stderr") || rc=$?; err=$(cat "$temp/stderr"); }
@@ -163,12 +167,42 @@ done
 put "$sl" '{not json'
 neg 1 'invalid statusline.json' --set off
 neg 1 'invalid statusline.json get' --get
+# Two JSON documents are not one config object.
+put "$sl" '{} {}'
+neg 1 'multi-document statusline.json' --set off
+
+# --url failure: the inner exit code propagates and the stderr tail is logged.
+put "$HOME/.claude-work/statusline.json" '{not json'
+run --url 'claude-statusline://toggle?slot=5h&profile=work'
+[[ $rc == 1 && -z $out && $err == *'is not a JSON object; left unchanged'* ]] || fail "url failure: rc=$rc out=[$out] err=[$err]"
+[[ $(tail -n 1 "$HOME/.claude-work/claude-statusline/url-handler.log") =~ $LOG_LINE_FAIL ]] || fail "url failure log: $(tail -n 1 "$HOME/.claude-work/claude-statusline/url-handler.log")"
+# A long profile path makes stderr longer than 200 characters: the log keeps only its last 200.
+long=$LONG_PROFILE_NAME; mkdir -p "$HOME/.claude-$long"; put "$HOME/.claude-$long/statusline.json" '{not json'
+run --url "claude-statusline://toggle?slot=7d&profile=$long"
+l=$(tail -n 1 "$HOME/.claude-$long/claude-statusline/url-handler.log")
+[[ $rc == 1 && ${#err} -gt 200 && ${#l} == 223 && $l == *' left unchanged' ]] || fail "url failure tail cut: rc=$rc len=${#l} [$l]"
 
 # Unowned statusLine: statusline.json written, settings.json byte-identical, note appended.
 put "$sl" '{"resets":true}'; put "$st" "$UNOWNED_SETTINGS"; before=$(cksum <"$st")
 run --set off; expect 0 "$OFF$UNOWNED_NOTE" 'unowned'
 [[ $(json "$sl") == '{"resets":false}' ]] || fail 'unowned statusline.json not written'
 [[ $(cksum <"$st") == "$before" ]] || fail 'unowned settings.json changed'
+# An empty command and a non-object settings root are unowned too.
+for s in '{"statusLine":{"type":"command","command":""}}' '[1]'; do
+  put "$st" "$s"; before=$(cksum <"$st")
+  run --set toggle; [[ $rc == 0 && $out == *"$UNOWNED_NOTE" ]] || fail "unowned [$s]: rc=$rc out=[$out] err=[$err]"
+  [[ $(cksum <"$st") == "$before" ]] || fail "unowned [$s] settings.json changed"
+done
+# Invalid settings.json: warned on stderr, left byte-identical; statusline.json still written, exit 0.
+put "$sl" '{"resets":true}'; put "$st" '{not json'; before=$(cksum <"$st")
+run --set off; expect 0 "$OFF" 'invalid settings.json'
+[[ $err == *'not valid JSON; left unchanged'* && $(cksum <"$st") == "$before" && $(json "$sl") == '{"resets":false}' ]] || fail "invalid settings.json: err=[$err]"
+# Legacy commands (the old dispatcher, the braisenly-statusline name) are owned: refreshInterval is managed.
+for c in "$LEGACY_DISPATCHER_COMMAND" "$LEGACY_BRAISENLY_COMMAND"; do
+  jq -n --arg c "$c" '{statusLine:{type:"command",command:$c}}' >"$st"; put "$sl" '{}'
+  run --format countdown; expect 0 "$ON_COUNTDOWN" "legacy owned [$c]"
+  [[ $(jq -c '.statusLine.refreshInterval' "$st") == 60 ]] || fail "legacy owned [$c]: $(json "$st")"
+done
 
 # Usage is first-class: -h prints it on stdout, exit 0.
 run -h; [[ $rc == 0 && $out == Usage:* ]] || fail "help: rc=$rc out=[$out]"
