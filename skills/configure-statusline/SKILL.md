@@ -1,6 +1,6 @@
 ---
 name: configure-statusline
-description: Configures, previews, resets, installs, or uninstalls the claude-statusline Claude Code status line, including segment order, visibility, labels, indicator lengths, terminal fitting, and the resize watcher. Use for requests such as "make my Claude status bars shorter", "show Fable usage", or "make the status line fit my split pane".
+description: Configures, previews, resets, installs, or uninstalls the claude-statusline Claude Code status line, including segment order, visibility, labels, indicator lengths, terminal fitting, the resize watcher, and the 5h/7d reset times (on/off, clock or countdown, the /statusline-resets command, the ctrl+x r key, click to toggle). Use for requests such as "make my Claude status bars shorter", "show Fable usage", "make the status line fit my split pane", "show reset times", "hide the reset times", or "show a countdown to when my 5h limit resets".
 compatibility: Requires bash and jq; Fable refresh additionally requires curl and Claude Code OAuth credentials.
 ---
 
@@ -27,8 +27,31 @@ Edit `statusline.json` atomically. Start from `statusline.example.json` when abs
 - Ladder steps, default order: `resets`, `disk_label`, `ctx_int`, `no_parens`, `disk_int`, `ctx_no_total`, `no_free`, `fable_short`, `disk_value`, `ctx_no_used`, `fable_label`, `fable_segment`, `seven_label`, `five_label`, `ctx_label`, `seven_segment`, `five_segment`. Unknown names reject the config.
 - Percentages always take the gradient colour of their bar tip. `thresholds` and `colors` from older configs are ignored; remove them when touching the file.
 - `fable`: model display name, refresh interval of at least 60 seconds, and maximum stale interval of at least 60 seconds.
+- `resets`: boolean, default `true`. Shows when the 5h and 7d limits reset, after each slot's `(pct%)`. `false` hides the reset text.
+- `resets_format`: `clock` (default) or `countdown`, case-sensitive. Any other value rejects the config.
 
 Report an exact validation error before changing invalid input. Keep existing values not mentioned by user.
+
+## Reset times
+
+Each 5h and 7d slot can show when its limit resets, from the `rate_limits.*.resets_at` the status line receives; a window that is absent shows nothing. The time is rounded up to the next whole minute, in the local time zone.
+
+- `clock` (default): 5h shows `↻22:40` (24h `HH:MM`); 7d shows `↻F14` (day code plus 24h hour). Day codes: `M` Mon, `T` Tue, `W` Wed, `R` Thu, `F` Fri, `SA` Sat, `SU` Sun.
+- `countdown`: `↻2h13m`, under an hour `↻42m`, a day or more `↻4d6h`.
+- Every rendered 5h/7d slot ends with a 2-cell click hint: `⊟◂` when reset times are shown, `⊞◂` when `resets` is `false`.
+- Ladder: `resets` is the first default step, so a narrow line drops the reset text and hint from both slots before anything else.
+
+Three ways to toggle, all rewriting only `resets` / `resets_format` in `statusline.json` (other keys are kept, a missing file is created, an invalid one is refused untouched):
+
+1. `/statusline-resets [toggle|on|off|clock|countdown|status]`: answers instantly, no model turn; no argument toggles. Needs Claude Code 2.1.286 or later.
+2. `ctrl+x r`: installed by the installer into `keybindings.json` (`Chat` context). Same requirement. A chord already bound to something else is left alone with a warning.
+3. Ctrl/Cmd+click on the 5h or 7d slot: needs a terminal with hyperlink support; not under tmux or WSL, and only after the installer registered the `claude-statusline://` handler. On Windows the installer adds `claude-statusline` to Windows Terminal's `safeUriSchemes` (it prints the file it edited); `-W` / `--no-wt-scheme` skips that and prints the line to add by hand.
+
+On older clients, or when none of the three works, edit `statusline.json` directly or run `scripts/resets-toggle.sh` (`pwsh -NoProfile -File scripts/resets-toggle.ps1` on Windows) with `--get`, `--set on|off|toggle`, or `--format clock|countdown`; `--format` also turns reset times on.
+
+Countdown only stays current if the status line refreshes. When the status line is claude-statusline's own, selecting `countdown` sets `statusLine.refreshInterval` to 60 and leaving `countdown` removes it again, but only if it is still 60; any other user value is kept. When the status line is not ours, nothing in `settings.json` is touched, and the user must set `statusLine.refreshInterval` to 60 or less themselves. Every toggle also bumps the `# bsl-cols=` nonce so Claude Code redraws at once.
+
+Uninstall: `bash <plugin-root>/scripts/install.sh --uninstall` (`pwsh -NoProfile -File <plugin-root>/scripts/install.ps1 --uninstall` on Windows; short form `-U`). It removes only what the installer added: the `ctrl+x r` entry, the click handler and its marker, the Windows Terminal scheme entry, the launcher directory, an owned `statusLine`, and the `enabledPlugins` entry.
 
 ## Resize watch
 
@@ -41,4 +64,4 @@ Pipe representative Claude status JSON into `scripts/statusline-dispatcher.sh` w
 ## Reset or uninstall
 
 - Reset: remove only active profile's `statusline.json`; built-in defaults resume.
-- Uninstall: remove `statusLine` only when its command points to this plugin or a legacy braisenly-statusline command, remove active profile's `statusline.json`, and disable plugin entry. Preserve every unrelated setting.
+- Uninstall: run `install --uninstall` (see Reset times) rather than hand-editing; it removes the owned `statusLine`, the keybinding, the click handler, the launcher, and the plugin entry. Then remove active profile's `statusline.json`. Preserve every unrelated setting.
