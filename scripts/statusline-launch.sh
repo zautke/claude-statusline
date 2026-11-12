@@ -16,10 +16,11 @@ Usage() {
 }
 
 url_mode=0 url=
+# The resize/toggle nonce " # bsl-cols=N" arrives as argv when no shell strips the comment: ignore it and the rest.
 case "${1:-}" in
   -h|--help) Usage; exit 0 ;;
-  -u|--url) [[ $# -eq 2 ]] || { Usage >&2; exit 2; }; url_mode=1 url=$2 ;;
-  '') ;;
+  -u|--url) [[ $# -eq 2 || ( $# -gt 2 && ${3:-} == '#'* ) ]] || { Usage >&2; exit 2; }; url_mode=1 url=$2 ;;
+  ''|'#'*) ;;
   *) Usage >&2; exit 2 ;;
 esac
 

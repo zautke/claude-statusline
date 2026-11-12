@@ -114,8 +114,9 @@ uninstall_keybinding() {
                          then (.bindings |= (to_entries | map(select(ours | not)) | from_entries)) | select(.bindings | length > 0)
                          else . end ]' "$kb")
   [[ $(jq -c . <<<"$new") == "$(jq -c . "$kb")" ]] && return
-  # A file holding nothing but what install_keybinding creates is ours: remove it.
-  if jq -e --arg s "$CLAUDE_CODE_KEYBINDINGS_JSON_SCHEMA_URL" '.bindings == [] and (keys == ["$schema", "bindings"]) and .["$schema"] == $s' <<<"$new" >/dev/null; then
+  # A file holding nothing but what install_keybinding creates is ours: remove it. A symlinked one (dotfiles) is
+  # rewritten instead, so neither the link nor its target disappears.
+  if [[ ! -L $config_dir/keybindings.json ]] && jq -e --arg s "$CLAUDE_CODE_KEYBINDINGS_JSON_SCHEMA_URL" '.bindings == [] and (keys == ["$schema", "bindings"]) and .["$schema"] == $s' <<<"$new" >/dev/null; then
     rm -f "$kb"; return
   fi
   atomic_write "$kb" "$new"
@@ -132,7 +133,7 @@ xdg_mime=${CLAUDE_STATUSLINE_XDG_MIME:-xdg-mime}
 osacompile=${CLAUDE_STATUSLINE_OSACOMPILE:-osacompile}
 plistbuddy=${CLAUDE_STATUSLINE_PLISTBUDDY:-/usr/libexec/PlistBuddy}
 lsregister=${CLAUDE_STATUSLINE_LSREGISTER:-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister}
-registered() { printf '%s\n' "$URL_SCHEME" >"$marker"; printf 'Registered the %s click handler.\n' "$URL_SCHEME"; }
+registered() { atomic_write "$marker" "$URL_SCHEME"; printf 'Registered the %s click handler.\n' "$URL_SCHEME"; }
 install_linux() {
   command -v "$xdg_mime" >/dev/null 2>&1 || { printf 'Click handler: xdg-mime not found; skipped. Install xdg-utils and run again to enable status-line clicks.\n'; return 0; }
   # ponytail: a launcher path with " ` $ or \ would need desktop-entry escaping; skip instead.

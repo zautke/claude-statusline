@@ -16,7 +16,9 @@ function Usage {
 $url = $null
 for ($i = 0; $i -lt $args.Count; $i++) {
     $a = [string]$args[$i]
-    if ($a -ceq '-h' -or $a -ceq '--help' -or $a -ceq '-Help') { Usage; exit 0 }
+    # The resize/toggle nonce " # bsl-cols=N" arrives as argv when no shell strips the comment: ignore it and the rest.
+    if ($a.StartsWith('#')) { break }
+    elseif ($a -in '-h', '--help', '-Help') { Usage; exit 0 }
     elseif (($a -ceq '-u' -or $a -ceq '--url') -and $i + 1 -lt $args.Count -and $null -eq $url) { $url = [string]$args[++$i] }
     else { [Console]::Error.WriteLine((Usage)); exit 2 }
 }

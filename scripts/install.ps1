@@ -84,6 +84,9 @@ function Norm-Chord([string]$k) { ($k.Trim() -replace '\s+', ' ').ToLowerInvaria
 function Read-Keybindings {
     try { $doc = Read-Json $kbPath } catch { Warn "keybindings: $kbPath is not valid JSON; left unchanged (bind $chord to $bind yourself)."; return $null }
     if ($doc -isnot [Collections.IDictionary] -or $doc.bindings -isnot [Collections.IList]) { Warn "keybindings: $kbPath has no ""bindings"" array; left unchanged."; return $null }
+    # PS7 parses // and /* */ comments, which a rewrite would drop; refuse as install.sh (jq) does.
+    $raw = Get-Content -Raw -LiteralPath $kbPath
+    if ((Get-JsoncTokens $raw).Plain -cne $raw) { Warn "keybindings: $kbPath has comments; left unchanged (bind $chord to $bind yourself)."; return $null }
     return $doc
 }
 function Install-Keybinding {
@@ -125,8 +128,10 @@ function Uninstall-Keybinding {
         $kept.Add($b)
     }
     if (-not $changed) { return }
-    # A file holding nothing but what Install-Keybinding creates is ours: remove it.
-    if ($kept.Count -eq 0 -and $doc.Count -eq 2 -and $doc['$schema'] -ceq $CLAUDE_CODE_KEYBINDINGS_JSON_SCHEMA_URL) { Remove-Item -LiteralPath $kbPath -Force; return }
+    # A file holding nothing but what Install-Keybinding creates is ours: remove it. A symlinked one (dotfiles) is
+    # rewritten instead, so neither the link nor its target disappears.
+    $kbLink = Join-Path $ConfigDir 'keybindings.json'
+    if ($kept.Count -eq 0 -and $doc.Count -eq 2 -and $doc['$schema'] -ceq $CLAUDE_CODE_KEYBINDINGS_JSON_SCHEMA_URL -and -not (Get-Item -LiteralPath $kbLink -Force).LinkType) { Remove-Item -LiteralPath $kbPath -Force; return }
     $doc.bindings = $kept
     Write-Atomic $kbPath (To-Json $doc)
 }
@@ -236,7 +241,8 @@ function Edit-WtSettings([string]$file, [bool]$add) {
             $new = $t.Insert($toks[$f.Open].End, $q)
         } else {
             $last = $toks[$f.Close - 1]
-            $new = $t.Insert($last.End, $(if ($last.Text -eq ',') { " $q" } else { ", $q" }))
+            # A trailing comma stays trailing, so uninstall (remove from the preceding comma) restores the bytes.
+            $new = $t.Insert($last.End, $(if ($last.Text -eq ',') { " $q," } else { ", $q" }))
         }
     } else {
         if (-not $ours.Count) { return }
@@ -274,7 +280,8 @@ if ($Uninstall) {
     Uninstall-Keybinding
     if ($IsWindows) {
         Uninstall-Handler
-        if (-not $NoWt) { foreach ($w in Get-WtSettingsFiles) { Edit-WtSettings $w $false } }
+        # The safe-list entry follows the handler: keep it while any handler (another profile's, or a program's) remains.
+        if (-not $NoWt -and $null -eq (Get-HandlerCmd)) { foreach ($w in Get-WtSettingsFiles) { Edit-WtSettings $w $false } }
     }
     if ($id.LAUNCHER_HOME -and (Test-Path -LiteralPath $launcherHome)) { Remove-Item -LiteralPath $launcherHome -Recurse -Force }
     "Uninstalled Claude status line from $ConfigDir"
