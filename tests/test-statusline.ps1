@@ -221,18 +221,11 @@ try {
     function Floor([string[]]$steps) { Set-Config ('{' + $pin + ',"fit":{"rows":1,"ladder":[' + (($steps | ForEach-Object { "`"$_`"" }) -join ',') + ']}}'); return (Render 10) }
     # The disk segment is always the 4th in the pinned order; mask its number so a free-space change between two renders
     # does not fail a comparison. ponytail: a digit-count change (9.9G -> 10.0G) mid-run still shifts the widths by one.
-    # Per row (a stacked render has two), so the disk value on the values row is masked too; the disk bar's fill is
-    # masked as well, since a free-space change can move its percentage.
+    # Per row, split on the bare separator dot: a stacked values row can open with U+2800 blanks directly before its
+    # first dot (no space), so ' ● ' would shift the fields; '●' keeps column 4 the disk on both rows. The disk bar's
+    # fill is masked as well, since a free-space change can move its percentage.
     function Mask-Disk([string]$s) {
-        (@($s -split "`n" | ForEach-Object { $seg = $_ -split ' ● '; if ($seg.Count -ge 4) { $seg[3] = $seg[3] -replace $DISK_SEGMENT_NUMBER_INTEGER_WITH_OPTIONAL_ONE_DECIMAL, 'N' -replace '[█░]+', 'B' }; $seg -join ' ● ' }) -join "`n")
-    }
-    # Deterministic check of the mask: flat and stacked renders that differ only in free space mask equal; a change
-    # outside the disk segment still shows.
-    $mf = 'Claude ● ~/w ● ctx [█░░] 1000B/195.3K (25%) ● disk [{1}] {0} free ● 5h [█░] (20%)'
-    $ms = "Claude ● ~/w ● ctx [█░░] ● disk [{1}] ● 5h [█░]`n⠀      ●     ●  1000B/195.3K (25%) ● {0} free ● (20%)"
-    foreach ($fmt in $mf, $ms) {
-        if ((Mask-Disk ($fmt -f '26.3G', '██░░')) -cne (Mask-Disk ($fmt -f '26.2G', '█░░░'))) { Fail "mask-disk: free-space change not masked: $fmt" }
-        if ((Mask-Disk ($fmt -f '26.3G', '██░░')) -ceq (Mask-Disk (($fmt -f '26.3G', '██░░').Replace('(20%)', '(21%)')))) { Fail "mask-disk: masked a change outside the disk segment: $fmt" }
+        (@($s -split "`n" | ForEach-Object { $seg = $_ -split '●'; if ($seg.Count -ge 4) { $seg[3] = $seg[3] -replace $DISK_SEGMENT_NUMBER_INTEGER_WITH_OPTIONAL_ONE_DECIMAL, 'N' -replace '[█░]+', 'B' }; $seg -join '●' }) -join "`n")
     }
     $base = Floor @()
     $m = [regex]::Match($base, $DISK_FREE_ONE_DECIMAL_THEN_UNIT_THEN_SPACE_FREE)
@@ -322,6 +315,20 @@ try {
     # Fit regression: at every stage the linked render draws exactly what the unlinked one (TMUX) draws.
     LCfg $lhome ('{' + $cd + ',"segments":["model","cwd","context","disk","five_hour","seven_day","fable"],"fit":{"rows":2}}')
     $wf = Get-Cells (Lr $lhome 400 @{ TMUX = '1' })
+    # Mask self-check on real renders, flat (400) and stacked (110, disk value on the values row; with and without colour,
+    # since NO_COLOR merges the first separator's space into the row's U+2800 lead): changing only the free-space number
+    # and the disk bar's fill masks equal; changing the 5h value does not.
+    foreach ($spec in @{ c = 400; e = @{ TMUX = '1' } }, @{ c = 110; e = @{ TMUX = '1' } }, @{ c = 110; e = @{ TMUX = '1'; NO_COLOR = '1' } }) {
+        $cols = $spec.c; $dr = Strip (Lr $lhome $cols $spec.e)
+        $dm = [regex]::Match($dr, $DISK_FREE_ONE_DECIMAL_THEN_UNIT_THEN_SPACE_FREE)
+        if (-not $dm.Success) { Fail "mask self-check ${cols}: no disk value: $dr" }
+        $dv = $dm.Groups[1].Value; $du = $dm.Groups[2].Value; $dw = $dv.Substring(0, $dv.Length - 1) + (([int][string]$dv[-1] + 1) % 10)
+        if ($cols -ne 400 -and ((Get-Rows $dr).Count -ne 2 -or -not (Get-Rows $dr)[1].Contains("$($dv)$($du) free"))) { Fail "mask self-check ${cols}: not stacked with disk on the values row: $dr" }
+        $dmut = ([regex]'disk \[█').Replace($dr.Replace("$($dv)$($du) free", "$($dw)$($du) free"), 'disk [░', 1)
+        if ($dmut -ceq $dr -or -not $dr.Contains('(20%)')) { Fail "mask self-check ${cols}: mutation did not apply" }
+        if ((Mask-Disk $dr) -cne (Mask-Disk $dmut)) { Fail "mask self-check ${cols}: free-space change not masked:`n$(Mask-Disk $dr)`n$(Mask-Disk $dmut)" }
+        if ((Mask-Disk $dr) -ceq (Mask-Disk $dr.Replace('(20%)', '(21%)'))) { Fail "mask self-check ${cols}: masked the 5h value" }
+    }
     $saw = ''
     foreach ($cols in 400, ($wf + $margin), ($wf - 6 + $margin), 110, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10) {
         $a = Lr $lhome $cols; $b = Lr $lhome $cols @{ TMUX = '1' }

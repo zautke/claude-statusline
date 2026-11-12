@@ -224,18 +224,11 @@ floor() { local steps= s; for s in "$@"; do steps+=${steps:+,}"\"$s\""; done; pr
 trim() { local s=$1; printf '%s' "${s%"${s##*[! ]}"}"; }
 # The disk segment is always the 4th in the pinned order; mask its number so a free-space change between two renders
 # does not fail a comparison. ponytail: a digit-count change (9.9G -> 10.0G) mid-run still shifts the widths by one.
-# awk works per row, so a stacked render's values row is masked too; the disk bar's fill is masked as well, since a
-# free-space change can move its percentage.
-mask_disk() { awk -F ' ● ' -v OFS=' ● ' -v re="$DISK_SEGMENT_NUMBER_INTEGER_WITH_OPTIONAL_ONE_DECIMAL" 'NF>=4{gsub(re,"N",$4); gsub(/[█░]+/,"B",$4)}1' <<<"$1"; }
-# Deterministic check of the mask: flat and stacked renders that differ only in free space mask equal; a change
-# outside the disk segment still shows.
-mf='Claude ● ~/w ● ctx [█░░] 1000B/195.3K (25%) ● disk [BAR] FREE free ● 5h [█░] (20%)'
-ms=$'Claude ● ~/w ● ctx [█░░] ● disk [BAR] ● 5h [█░]\n⠀      ●     ●  1000B/195.3K (25%) ● FREE free ● (20%)'
-for fmt in "$mf" "$ms"; do
-  x=${fmt//FREE/26.3G}; x=${x//BAR/██░░}; y=${fmt//FREE/26.2G}; y=${y//BAR/█░░░}
-  [[ $(mask_disk "$x") == "$(mask_disk "$y")" ]] || { printf 'mask-disk: free-space change not masked:\n%s\n%s\n' "$x" "$y" >&2; exit 1; }
-  [[ $(mask_disk "$x") != "$(mask_disk "${x/(20%)/(21%)}")" ]] || { printf 'mask-disk: masked a change outside the disk segment\n' >&2; exit 1; }
-done
+# Per row, split on the bare separator dot: a stacked values row can open with U+2800 blanks directly before its first
+# dot (no space), so ' ● ' would shift the fields; '●' keeps column 4 the disk on both rows. The disk bar's fill is
+# masked as well, since a free-space change can move its percentage.
+mask_disk() { awk -F '●' -v OFS='●' -v re="$DISK_SEGMENT_NUMBER_INTEGER_WITH_OPTIONAL_ONE_DECIMAL" 'NF>=4{gsub(re,"N",$4); gsub(/[█░]+/,"B",$4)}1' <<<"$1"; }
+
 base=$(floor)
 [[ $base =~ $DISK_FREE_ONE_DECIMAL_THEN_UNIT_THEN_SPACE_FREE ]] || { printf 'baseline lost the disk value: %s\n' "$base" >&2; exit 1; }
 dnum=${BASH_REMATCH[1]} dunit=${BASH_REMATCH[2]}; dtok=$dnum$dunit
@@ -320,6 +313,20 @@ done
 # Fit regression: at every stage the linked render draws exactly what the unlinked one (TMUX) draws.
 lcfg "$lhome" "{$cd_,\"segments\":[\"model\",\"cwd\",\"context\",\"disk\",\"five_hour\",\"seven_day\",\"fable\"],\"fit\":{\"rows\":2}}"
 wf=$(cells "$(lr "$lhome" 400 TMUX=1)")
+# Mask self-check on real renders, flat (400) and stacked (110, disk value on the values row; with and without colour,
+# since NO_COLOR merges the first separator's space into the row's U+2800 lead): changing only the free-space number
+# and the disk bar's fill masks equal; changing the 5h value does not.
+for c in 400 110 110n; do
+  x=; [[ $c == *n ]]&&{ c=${c%n}; x=NO_COLOR=1; }
+  r=$(strip "$(lr "$lhome" "$c" TMUX=1 $x)")
+  [[ $r =~ $DISK_FREE_ONE_DECIMAL_THEN_UNIT_THEN_SPACE_FREE ]] || { printf 'mask self-check %s: no disk value: %s\n' "$c" "$r" >&2; exit 1; }
+  v=${BASH_REMATCH[1]} u=${BASH_REMATCH[2]}; w=${v%?}$(( (${v: -1}+1)%10 ))
+  ((c==400)) || { [[ $(rows "$r") -eq 2 && $(row "$r" 2) == *"$v$u free"* ]] || { printf 'mask self-check %s: not stacked with disk on the values row: %s\n' "$c" "$r" >&2; exit 1; }; }
+  m=${r/"$v$u free"/"$w$u free"}; m=${m/disk \[█/disk [░}
+  [[ $m != "$r" && $r == *"(20%)"* ]] || { printf 'mask self-check %s: mutation did not apply\n' "$c" >&2; exit 1; }
+  [[ $(mask_disk "$r") == "$(mask_disk "$m")" ]] || { printf 'mask self-check %s: free-space change not masked:\n%s\n%s\n' "$c" "$(mask_disk "$r")" "$(mask_disk "$m")" >&2; exit 1; }
+  [[ $(mask_disk "$r") != "$(mask_disk "${r/(20%)/(21%)}")" ]] || { printf 'mask self-check %s: masked the 5h value\n' "$c" >&2; exit 1; }
+done
 saw=
 for c in 400 $((wf+margin)) $((wf-6+margin)) 110 100 90 80 70 60 50 40 30 20 10; do
   a=$(lr "$lhome" "$c"); b=$(lr "$lhome" "$c" TMUX=1)
