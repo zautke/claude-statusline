@@ -24,8 +24,9 @@ temp=$(mktemp -d)
 trap 'rm -rf "$temp"' EXIT
 profile=$temp/profile
 # The installer also registers a click handler: keep HOME, XDG dirs and tools inside the sandbox.
-export HOME=$temp/home XDG_DATA_HOME=$temp/xdg-data XDG_CONFIG_HOME=$temp/xdg-config CLAUDE_STATUSLINE_XDG_MIME=$temp/no-xdg-mime
-[[ $HOME == "$temp"/* && $XDG_DATA_HOME == "$temp"/* ]] || { printf 'ABORT: isolation overrides unset\n' >&2; exit 3; }
+# CLAUDE_STATUSLINE_UNAME=none: no handler on any OS, so macOS CI never runs the real osacompile/PlistBuddy/lsregister.
+export HOME=$temp/home XDG_DATA_HOME=$temp/xdg-data XDG_CONFIG_HOME=$temp/xdg-config CLAUDE_STATUSLINE_XDG_MIME=$temp/no-xdg-mime CLAUDE_STATUSLINE_UNAME=none
+[[ $HOME == "$temp"/* && $XDG_DATA_HOME == "$temp"/* && $CLAUDE_STATUSLINE_UNAME == none ]] || { printf 'ABORT: isolation overrides unset\n' >&2; exit 3; }
 bash "$plugin/scripts/install.sh" --config-dir "$profile" >/dev/null
 launcher=$profile/$LAUNCHER_HOME/scripts/statusline-launch.sh
 state=$profile/plugins/installed_plugins.json
@@ -42,6 +43,8 @@ record() { jq -n --arg id "$PLUGIN_ID" --arg u "$1" --arg p "$2" \
 # Positive: user scope wins over an earlier project record; stdin reaches the renderer.
 record "$temp/user" "$temp/project"
 [[ $(printf '{"x":1}' | bash "$launcher") == 'user:{"x":1}' ]] || fail 'user-scope record not chosen'
+# The resize/toggle nonce " # bsl-cols=N" reaches the launcher as argv when no shell strips it: everything from '#' is ignored.
+[[ $(printf '{"x":2}' | bash "$launcher" '#' 'bsl-cols=1') == 'user:{"x":2}' ]] || fail 'nonce args not ignored'
 
 # --url passthrough: the chosen version's resets-toggle gets the URL as one argv element; its exit code propagates.
 for v in user project; do

@@ -109,11 +109,19 @@ printf '%s' '{"bindings":[{"context":"Global","bindings":{"ctrl+t":"app:toggleTo
 inst -c "$cfg"
 jq -e --arg c "$chord" --arg v "$cmd" '(.bindings|length)==3 and .bindings[0].bindings["ctrl+t"]=="app:toggleTodos" and .bindings[1].bindings["shift+enter"]=="chat:newline" and .bindings[1].bindings[$c]==$v and (.bindings[2].bindings|length)==0' "$kb" >/dev/null || fail "merge: $(cat "$kb")"
 
-for t in '{"bindings":[{"context":"Chat","bindings":{"Ctrl+X  R":"chat:killAgents"}}]}' '{"bindings":[{"context":"Chat",' '{"bindings":{}}'; do
+for t in '{"bindings":[{"context":"Chat","bindings":{"Ctrl+X  R":"chat:killAgents"}}]}' '{"bindings":[{"context":"Chat",' '{"bindings":{}}' $'{\n  // mine\n  "bindings": []\n}'; do
   printf '%s' "$t" >"$kb"
   inst -c "$cfg" || fail "negative keybinding '$t' failed the install: $err"
   [[ $(cat "$kb") == "$t" && $err == *keybindings* ]] || fail "negative keybinding '$t': err=$err now=$(cat "$kb")"
 done
+
+# A symlinked keybindings.json that would be left holding nothing of the user's keeps its link and target.
+cfgl=$temp/kb-link; mkdir -p "$cfgl" "$temp/dotfiles"
+jq -n --arg s "$CLAUDE_CODE_KEYBINDINGS_JSON_SCHEMA_URL" '{"$schema": $s, bindings: []}' >"$temp/dotfiles/keybindings.json"
+ln -s "$temp/dotfiles/keybindings.json" "$cfgl/keybindings.json"
+inst -c "$cfgl"; inst -c "$cfgl" -U
+[[ -L $cfgl/keybindings.json && -f $temp/dotfiles/keybindings.json ]] || fail 'uninstall deleted a symlinked keybindings.json or its target'
+! grep -qF "$cmd" "$temp/dotfiles/keybindings.json" || fail 'uninstall left our binding in the symlink target'
 
 printf '%s' '{"bindings":[{"context":"Chat","bindings":{"shift+enter":"chat:newline"}}]}' >"$kb"
 inst -c "$cfg"; inst -c "$cfg" --uninstall
@@ -135,6 +143,7 @@ inst -c "$cfgb"; inst -c "$cfg" -U
 [[ ! -e $marker ]] || fail 'uninstall left this profile''s marker'
 inst -c "$cfgb" --uninstall
 [[ ! -e $desktop ]] || fail 'uninstall left our own .desktop'
+[[ ! -e $cfgb/keybindings.json ]] || fail 'uninstall left the keybindings.json it created'
 
 # Negative: xdg-mime missing -> note, no .desktop, no marker.
 CLAUDE_STATUSLINE_XDG_MIME=$temp/bin/none inst -c "$cfg" || fail "no xdg-mime: $err"

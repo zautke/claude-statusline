@@ -60,6 +60,7 @@ function Expect-Cmd([string]$cfg) { "conhost.exe --headless pwsh -NoProfile -Non
 $wtAbsent = "// generated { by Windows Terminal`r`n{`r`n    `"`$help`": `"https://aka.ms/terminal-documentation`",`r`n    // `"safeUriSchemes`": [`"x`"] in a comment`r`n    `"copyOnSelect`": false, /* block } */`r`n    `"profiles`":`r`n    {`r`n        `"defaults`": {},`r`n        `"list`": [ { `"name`": `"pwsh`" } ]`r`n    },`r`n    `"schemes`": []`r`n}`r`n"
 $wtList = "{`n  `"safeUriSchemes`": [`"ms-settings`", /* keep */ `"vscode`"],`n  `"theme`": `"dark`" // trailing`n}`n"
 $wtEmpty = "{`n    `"safeUriSchemes`": [ ],`n    `"x`": 1`n}`n"
+$wtTrail = "{`n    `"safeUriSchemes`": [`"a`",],`n    `"x`": 1`n}`n"
 $wtNested = "{`n    `"profiles`": { `"defaults`": { `"safeUriSchemes`": [] } }`n}`n"
 
 try {
@@ -140,10 +141,23 @@ try {
     Reset-Reg
 
     # Negatives: chord bound elsewhere (any spelling) or invalid JSON -> file untouched + stderr warning.
-    foreach ($t in '{"bindings":[{"context":"Chat","bindings":{"Ctrl+X  R":"chat:killAgents"}}]}', '{"bindings":[{"context":"Chat",', '{"bindings":{}}') {
+    foreach ($t in '{"bindings":[{"context":"Chat","bindings":{"Ctrl+X  R":"chat:killAgents"}}]}', '{"bindings":[{"context":"Chat",', '{"bindings":{}}', "{`n  // mine`n  ""bindings"": []`n}") {
         Write-Text $kb $t
         $r = Inst @('-c', $cfg, '-W')
         if ($r.Rc -ne 0 -or (Read-Text $kb) -cne $t -or $r.Err -notmatch 'keybindings') { Fail "negative keybinding '$t': rc=$($r.Rc) err=$($r.Err) now=$(Read-Text $kb)" }
+        Reset-Reg
+    }
+
+    # A symlinked keybindings.json that would be left holding nothing of the user's keeps its link and target.
+    $cfgL = Join-Path $temp 'kb-link'; $kbReal = Join-Path $temp 'dotfiles/keybindings.json'
+    Write-Text $kbReal "{`"`$schema`":`"$CLAUDE_CODE_KEYBINDINGS_JSON_SCHEMA_URL`",`"bindings`":[]}"
+    $kbLinked = $true
+    try { New-Item -ItemType Directory -Force $cfgL | Out-Null; New-Item -ItemType SymbolicLink -Path (Join-Path $cfgL 'keybindings.json') -Target $kbReal -ErrorAction Stop | Out-Null }
+    catch { $kbLinked = $false; "SKIP keybindings symlink case: cannot create symlinks on this host; covered by test-install.sh under WSL" }
+    if ($kbLinked) {
+        $null = Inst @('-c', $cfgL, '-W'); $null = Inst @('-c', $cfgL, '-W', '-U')
+        if (-not (Get-Item -LiteralPath (Join-Path $cfgL 'keybindings.json') -ErrorAction SilentlyContinue).LinkType -or -not (Test-Path -LiteralPath $kbReal)) { Fail 'uninstall deleted a symlinked keybindings.json or its target' }
+        if ((Read-Text $kbReal).Contains($cmd)) { Fail 'uninstall left our binding in the symlink target' }
         Reset-Reg
     }
 
@@ -174,6 +188,7 @@ try {
     if (Test-Path -LiteralPath $marker) { Fail 'uninstall left this profile''s marker' }
     $null = Inst @('-c', $cfgB, '-W', '--uninstall')
     if (Test-Path -LiteralPath $regKey) { Fail 'uninstall left our own handler' }
+    if (Test-Path -LiteralPath (Join-Path $cfgB 'keybindings.json')) { Fail 'uninstall left the keybindings.json it created' }
     Reset-Reg
 
     # Negative: a foreign handler is kept, warned about, and no marker is written.
@@ -197,6 +212,7 @@ try {
         absent = @($wtAbsent, $wtAbsent.Insert($absIns, "`r`n    `"safeUriSchemes`": [$q],"))
         list   = @($wtList, $wtList.Replace('"vscode"]', "`"vscode`", $q]"))
         empty  = @($wtEmpty, $wtEmpty.Replace('[ ]', "[$q ]"))
+        trailing = @($wtTrail, $wtTrail.Replace('"a",]', """a"", $q,]"))
     }
     foreach ($name in $cases.Keys) {
         $orig, $want = $cases[$name]
@@ -210,6 +226,22 @@ try {
         if ((Read-Text $wt) -cne $orig) { Fail "WT ${name}: uninstall did not restore the original bytes`n$(Read-Text $wt)" }
         Reset-Reg
     }
+    # The safe-list entry follows the handler: while another profile's handler is registered, uninstall keeps it.
+    Write-Text $wt $wtList
+    $null = Inst @('-c', $cfg); $null = Inst @('-c', (Join-Path $temp 'wtcase-b'))
+    $null = Inst @('-c', $cfg, '-U')
+    if (-not (Read-Text $wt).Contains($q)) { Fail 'WT entry removed while another profile still owns the handler' }
+    $null = Inst @('-c', (Join-Path $temp 'wtcase-b'), '-U')
+    if ((Read-Text $wt) -cne $wtList) { Fail "WT shared: last uninstall did not restore the original bytes`n$(Read-Text $wt)" }
+    Reset-Reg
+    # Negative: an entry kept for a foreign handler is never removed by uninstall.
+    $userList = $wtList.Replace('"vscode"]', "`"vscode`", $q]")
+    Write-Text $wt $userList
+    New-Item -Path "$regKey\shell\open\command" -Force | Out-Null
+    Set-Item -LiteralPath "$regKey\shell\open\command" -Value 'C:\other\app.exe "%1"'
+    $null = Inst @('-c', $cfg, '-U')
+    if ((Read-Text $wt) -cne $userList) { Fail 'uninstall removed a safe-list entry it does not own' }
+    Reset-Reg
     # -W leaves the file alone and prints the manual setting; nested-only property -> skip + warning.
     Write-Text $wt $wtAbsent
     $r = Inst @('-c', $cfg, '--no-wt-scheme')

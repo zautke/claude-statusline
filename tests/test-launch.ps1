@@ -74,6 +74,10 @@ try {
     Write-Record (Join-Path $temp 'user') (Join-Path $temp 'project')
     $r = Invoke-Launcher '{"x":1}'
     if ($r.Out -ne 'user:{"x":1}') { Fail "user-scope record not chosen: $($r.Out)" }
+    # The resize/toggle nonce " # bsl-cols=N" reaches pwsh as argv when no shell strips it: everything from '#' is ignored.
+    $out = '{"x":2}' | pwsh -NoProfile -NonInteractive -File $launcher '#' 'bsl-cols=1'
+    if ($LASTEXITCODE -ne 0 -or ($out -join "`n").TrimEnd() -ne 'user:{"x":2}') { Fail "nonce args not ignored: rc=$LASTEXITCODE out=$out" }
+    if ((pwsh -NoProfile -NonInteractive -File $launcher -help | Select-Object -First 1) -notlike 'Usage: statusline-launch.ps1*') { Fail '-help (any case) no longer shows Usage' }
 
     # --url passthrough: the chosen version's resets-toggle gets the URL as one argv element; its exit code propagates.
     foreach ($v in 'user', 'project') {
