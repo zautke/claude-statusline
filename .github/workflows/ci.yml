@@ -46,14 +46,22 @@ jobs:
       - name: Mod tests (claude plugin test)
         run: pnpm dlx @anthropic-ai/claude-code@2.1.322 plugin test .
       - name: Plugin validates (only the reserved-name errors are known)
-        # claude-statusline is a reserved-looking name, so validate exits 1 by design; any other error, or a
-        # blocking directory finding, fails. Warnings (no icon) are pre-existing and allowed. pnpm progress lines
-        # may precede the JSON, so it is cut from the first line that starts with "{".
+        # claude-statusline is a reserved-looking name, so validate exits 1 by design. The step fails unless the
+        # JSON has the expected shape (manifest and every contents entry carry an errors array, directory.failure is
+        # null) and every error is a reserved-name one, and on any blocking directory finding. Warnings (no icon)
+        # are pre-existing and allowed. pnpm progress lines may precede the JSON, so it is cut from the first line
+        # that starts with "{"; a crash or non-JSON output leaves jq with no input, which fails -e.
         run: |
           pnpm dlx @anthropic-ai/claude-code@2.1.322 plugin validate . --json > validate.raw || true
           sed -n '/^{/,$p' validate.raw > validate.json
-          jq -e '[.. | objects | select(has("errors")) | .errors[]] | all(.message | test("is reserved"))' validate.json
-          jq -e '[.directory.findings[]? | select(.blocking)] | length == 0' validate.json
+          jq -e '
+            (.manifest.errors | type == "array")
+            and (.contents | type == "array" and length > 0 and all(.errors | type == "array"))
+            and (.directory.failure == null)
+            and (.directory.findings | type == "array")
+            and ([.manifest.errors[], (.contents[] | .errors[])] | all(.message | test("is reserved")))
+            and ([.directory.findings[] | select(.blocking)] | length == 0)
+          ' validate.json
 
   pwsh:
     name: pwsh (windows-latest)
