@@ -81,6 +81,8 @@ if ($action -ceq 'url') {
     if (-not $m.Success) { Fail 'invalid URL' 2 }
     # The slot (group 1) is validated only; the toggle is global.
     $profileName = $m.Groups[2].Value -replace '^&profile=', ''
+    # The renderer drops the profile only for ~/.claude; the handler's own CLAUDE_CONFIG_DIR is not the session's.
+    $cfg = Join-Path $homeDir '.claude'
     if ($profileName) {
         $cfg = Join-Path $homeDir ".claude-$profileName"
         if ($profileName.Contains('..') -or -not (Test-Path -LiteralPath $cfg -PathType Container)) { Fail 'no such profile directory' 2 }
@@ -96,10 +98,12 @@ if ($action -ceq 'url') {
     $tail = $err -replace "[`r`n]", ' '
     if ($tail.Length -gt 200) { $tail = $tail.Substring($tail.Length - 200) }
     $logDir = Join-Path $cfg $id.LAUNCHER_HOME; $log = Resolve-Target (Join-Path $logDir 'url-handler.log')
-    New-Item -ItemType Directory -Force -Path $logDir | Out-Null
     $stamp = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ', [Globalization.CultureInfo]::InvariantCulture)
-    $lines = @(if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log }) + ("$stamp $rc" + $(if ($tail) { " $tail" }))
-    try { [void](Write-Atomic $log (($lines | Select-Object -Last 50) -join "`n")) } catch { [Console]::Error.WriteLine("resets-toggle.ps1: cannot write $log") }
+    $lines = @(if (Test-Path -LiteralPath $log -PathType Leaf) { Get-Content -LiteralPath $log }) + ("$stamp $rc" + $(if ($tail) { " $tail" }))
+    try {
+        New-Item -ItemType Directory -Force -Path $logDir -ErrorAction Stop | Out-Null
+        [void](Write-Atomic $log (($lines | Select-Object -Last 50) -join "`n"))
+    } catch { [Console]::Error.WriteLine("resets-toggle.ps1: cannot write $log") }
     exit $rc
 }
 

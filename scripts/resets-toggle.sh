@@ -71,6 +71,8 @@ if [[ $action == url ]]; then
   [[ $value =~ $RESETS_TOGGLE_URL_SCHEME_TOGGLE_SLOT_5H_OR_7D_OPTIONAL_PROFILE_FULL_MATCH ]] || { printf 'resets-toggle.sh: invalid URL\n' >&2; exit 2; }
   # The slot (group 1) is validated only; the toggle is global.
   profile=${BASH_REMATCH[2]#&profile=}
+  # The renderer drops the profile only for ~/.claude; the handler's own CLAUDE_CONFIG_DIR is not the session's.
+  cfg=$HOME/.claude
   if [[ -n $profile ]]; then
     cfg=$HOME/.claude-$profile
     [[ $profile != *..* && -d $cfg ]] || { printf 'resets-toggle.sh: no such profile directory\n' >&2; exit 2; }
@@ -81,7 +83,8 @@ if [[ $action == url ]]; then
   ((${#tail_text} > 200)) && tail_text=${tail_text:${#tail_text}-200}
   log_dir=$cfg/$LAUNCHER_HOME log=$cfg/$LAUNCHER_HOME/url-handler.log
   [[ -e $log ]] && log=$(resolve "$log")
-  mkdir -p "$log_dir" && atomic_write "$log" "$({ [[ -f $log ]] && cat "$log"; printf '%s %s%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$rc" "${tail_text:+ $tail_text}"; } | tail -n 50)"
+  { mkdir -p "$log_dir" && atomic_write "$log" "$({ [[ -f $log ]] && cat "$log"; printf '%s %s%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$rc" "${tail_text:+ $tail_text}"; } | tail -n 50)"; } 2>/dev/null ||
+    printf 'resets-toggle.sh: cannot write %s\n' "$log" >&2
   exit "$rc"
 fi
 
