@@ -50,6 +50,8 @@ RESETS_COUNTDOWN_STATUS_LINE_REFRESH_INTERVAL_SECONDS=60
 
 # Key chord the installers bind to the statusline-resets command.
 RESETS_TOGGLE_DEFAULT_KEY_CHORD_CTRL_X_THEN_R='ctrl+x r'
+# JSON schema the installers stamp on a keybindings.json they create.
+CLAUDE_CODE_KEYBINDINGS_JSON_SCHEMA_URL='https://www.schemastore.org/claude-code-keybindings.json'
 
 # Click URL accepted by the toggle CLI: claude-statusline://toggle?slot=5h|7d[&profile=<name>], whole string.
 RESETS_TOGGLE_URL_SCHEME_TOGGLE_SLOT_5H_OR_7D_OPTIONAL_PROFILE_FULL_MATCH='^claude-statusline://toggle/?\?slot=(5h|7d)(&profile=[A-Za-z0-9._-]+)?$'
