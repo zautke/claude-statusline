@@ -52,6 +52,9 @@ RESETS_COUNTDOWN_STATUS_LINE_REFRESH_INTERVAL_SECONDS=60
 RESETS_TOGGLE_DEFAULT_KEY_CHORD_CTRL_X_THEN_R='ctrl+x r'
 # JSON schema the installers stamp on a keybindings.json they create.
 CLAUDE_CODE_KEYBINDINGS_JSON_SCHEMA_URL='https://www.schemastore.org/claude-code-keybindings.json'
+# Prepended to the macOS click applet's PATH (do shell script runs with /usr/bin:/bin:/usr/sbin:/sbin) so a Homebrew
+# jq is found. Used by install.sh only; kept in constants.ps1 too for parity.
+MACOS_URL_HANDLER_APPLET_PATH_PREFIX_HOMEBREW_ARM_THEN_USR_LOCAL_BIN='/opt/homebrew/bin:/usr/local/bin'
 
 # Click URL accepted by the toggle CLI: claude-statusline://toggle?slot=5h|7d[&profile=<name>], whole string.
 RESETS_TOGGLE_URL_SCHEME_TOGGLE_SLOT_5H_OR_7D_OPTIONAL_PROFILE_FULL_MATCH='^claude-statusline://toggle/?\?slot=(5h|7d)(&profile=[A-Za-z0-9._-]+)?$'

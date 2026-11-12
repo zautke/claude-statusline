@@ -56,7 +56,7 @@ atomic_write() {
   tmp=$(mktemp "${dst%/*}/.${dst##*/}.XXXXXX")
   printf '%s\n' "$2" >"$tmp"
   if [[ -e $dst ]]; then mode=$(stat -c %a "$dst" 2>/dev/null || stat -f %OLp "$dst" 2>/dev/null) && chmod "$mode" "$tmp"; fi
-  mv "$tmp" "$dst"
+  mv "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
 }
 owned() { [[ -z $1 || $1 =~ $OWNED_COMMAND_MENTIONS_CLAUDE_OR_LEGACY_BRAISENLY_STATUSLINE || $1 == 'bash ~/.claude/statusline-dispatcher.sh' ]]; }
 
@@ -127,6 +127,8 @@ uname_s=${CLAUDE_STATUSLINE_UNAME:-$(uname -s)}
 desktop_name=$URL_SCHEME-toggle.desktop
 desktop=${XDG_DATA_HOME:-$HOME/.local/share}/applications/$desktop_name
 desktop_exec="Exec=bash \"$launcher\" --url %u"
+mimeapps=${XDG_CONFIG_HOME:-$HOME/.config}/mimeapps.list
+mime_default=x-scheme-handler/$URL_SCHEME=$desktop_name
 app=$HOME/Applications/$URL_SCHEME-toggle.app
 app_owner=$app/Contents/Resources/$LAUNCHER_HOME-launcher
 xdg_mime=${CLAUDE_STATUSLINE_XDG_MIME:-xdg-mime}
@@ -134,37 +136,47 @@ osacompile=${CLAUDE_STATUSLINE_OSACOMPILE:-osacompile}
 plistbuddy=${CLAUDE_STATUSLINE_PLISTBUDDY:-/usr/libexec/PlistBuddy}
 lsregister=${CLAUDE_STATUSLINE_LSREGISTER:-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister}
 registered() { atomic_write "$marker" "$URL_SCHEME"; printf 'Registered the %s click handler.\n' "$URL_SCHEME"; }
-install_linux() {
-  command -v "$xdg_mime" >/dev/null 2>&1 || { printf 'Click handler: xdg-mime not found; skipped. Install xdg-utils and run again to enable status-line clicks.\n'; return 0; }
+# The .desktop entry that runs launcher $1; 1 when the path cannot be written safely.
+write_desktop() {
   # ponytail: a launcher path with " ` $ or \ would need desktop-entry escaping; skip instead.
-  case $launcher in *[\"\`\$\\]*) warn "launcher path needs quoting the .desktop format cannot take safely; click handler skipped."; return 0 ;; esac
+  case $1 in *[\"\`\$\\]*) warn "launcher path needs quoting the .desktop format cannot take safely; click handler skipped."; return 1 ;; esac
   mkdir -p "${desktop%/*}"
   atomic_write "$desktop" "[Desktop Entry]
 Type=Application
 Name=$PLUGIN_NAME click handler
-$desktop_exec
+Exec=bash \"$1\" --url %u
 NoDisplay=true
 Terminal=false
 MimeType=x-scheme-handler/$URL_SCHEME;"
+}
+install_linux() {
+  command -v "$xdg_mime" >/dev/null 2>&1 || { printf 'Click handler: xdg-mime not found; skipped. Install xdg-utils and run again to enable status-line clicks.\n'; return 0; }
+  write_desktop "$launcher" || return 0
   "$xdg_mime" default "$desktop_name" "x-scheme-handler/$URL_SCHEME" || { warn "xdg-mime failed; status-line clicks stay off."; return 0; }
   registered
 }
-install_mac() {
+# Builds and registers the applet that runs launcher $1; non-zero on any failure.
+build_app() {
   local src esc ok=0
   # AppleScript string literal: escape \ and "; the URL itself only ever travels as quoted form of u.
-  esc=$(printf '%s' "$launcher" | sed 's/[\\"]/\\&/g')
+  esc=$(printf '%s' "$1" | sed 's/[\\"]/\\&/g')
   src=$(mktemp)
-  printf 'on open location u\n\tdo shell script "bash " & quoted form of "%s" & " --url " & quoted form of u\nend open location\n' "$esc" >"$src"
+  # do shell script runs with PATH=/usr/bin:/bin:/usr/sbin:/sbin; the launcher and toggle need jq, often Homebrew's.
+  printf 'on open location u\n\tdo shell script "PATH=%s:$PATH bash " & quoted form of "%s" & " --url " & quoted form of u\nend open location\n' \
+    "$MACOS_URL_HANDLER_APPLET_PATH_PREFIX_HOMEBREW_ARM_THEN_USR_LOCAL_BIN" "$esc" >"$src"
   [[ -n $URL_SCHEME ]] && rm -rf "$app"
   mkdir -p "${app%/*}"
   "$osacompile" -o "$app" "$src" &&
     "$plistbuddy" -c 'Add :CFBundleURLTypes array' -c 'Add :CFBundleURLTypes:0 dict' \
       -c "Add :CFBundleURLTypes:0:CFBundleURLName string $URL_SCHEME" -c 'Add :CFBundleURLTypes:0:CFBundleURLSchemes array' \
       -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $URL_SCHEME" -c 'Add :LSUIElement bool true' "$app/Contents/Info.plist" &&
-    mkdir -p "${app_owner%/*}" && printf '%s\n' "$launcher" >"$app_owner" &&
+    mkdir -p "${app_owner%/*}" && printf '%s\n' "$1" >"$app_owner" &&
     "$lsregister" -f "$app" && ok=1
   rm -f "$src"
-  if ((ok)); then registered; else warn "could not build the click handler app; status-line clicks stay off."; fi
+  ((ok))
+}
+install_mac() {
+  if build_app "$launcher"; then registered; else warn "could not build the click handler app; status-line clicks stay off."; fi
 }
 install_handler() {
   if [[ -n ${WSL_DISTRO_NAME:-} ]]; then
@@ -176,10 +188,43 @@ install_handler() {
     *) printf 'Click handler: not supported on %s; skipped.\n' "$uname_s" ;;
   esac
 }
+# Launcher of the first other profile under HOME (~/.claude, ~/.claude-<name>) whose renderer still draws links
+# (marker present). Any profile's launcher serves any profile's click: the URL carries &profile=.
+other_launcher() {
+  local d
+  for d in "$HOME/.claude" "$HOME"/.claude-*; do
+    [[ $d == "${config_dir%/}" ]] && continue
+    if [[ -f $d/$LAUNCHER_HOME/url-handler && -f $d/$LAUNCHER_HOME/scripts/statusline-launch.sh ]]; then
+      printf '%s' "$d/$LAUNCHER_HOME/scripts/statusline-launch.sh"; return 0
+    fi
+  done
+  return 1
+}
+# Drops our scheme's default from mimeapps.list (what xdg-mime default wrote); other lines stay.
+unset_mime_default() {
+  local f=$mimeapps
+  [[ -e $f ]] || return 0
+  f=$(resolve "$f")
+  grep -qxF -e "$mime_default" -e "$mime_default;" "$f" || return 0
+  atomic_write "$f" "$(grep -vxF -e "$mime_default" -e "$mime_default;" "$f")"
+}
 uninstall_handler() {
-  # Only a handler that runs THIS profile's launcher; another profile's stays.
-  if [[ -f $desktop ]] && grep -qxF "$desktop_exec" "$desktop"; then rm -f "$desktop"; fi
-  if [[ -f $app_owner && $(cat "$app_owner") == "$launcher" ]]; then "$lsregister" -u "$app" >/dev/null 2>&1 || true; rm -rf "$app"; fi
+  local next
+  next=$(other_launcher) || next=
+  # Only a handler that runs THIS profile's launcher; another profile's stays. If another profile still draws links,
+  # the handler moves to that profile's launcher instead of leaving its clicks dangling.
+  if [[ -f $desktop ]] && grep -qxF "$desktop_exec" "$desktop"; then
+    if [[ -n $next ]] && write_desktop "$next"; then
+      "$xdg_mime" default "$desktop_name" "x-scheme-handler/$URL_SCHEME" >/dev/null 2>&1 || true
+      printf 'Moved the %s click handler to %s\n' "$URL_SCHEME" "$next"
+    else
+      rm -f "$desktop"; unset_mime_default
+    fi
+  fi
+  if [[ -f $app_owner && $(cat "$app_owner") == "$launcher" ]]; then
+    if [[ -n $next ]] && build_app "$next"; then printf 'Moved the %s click handler to %s\n' "$URL_SCHEME" "$next"
+    else "$lsregister" -u "$app" >/dev/null 2>&1 || true; rm -rf "$app"; fi
+  fi
 }
 
 # ---- uninstall ----
@@ -212,7 +257,8 @@ else
   command="bash $launcher"
 fi
 if [[ -r $settings ]]; then
-  new=$(jq --arg cmd "$command" --arg id "$PLUGIN_ID" '.statusLine={type:"command",command:$cmd} | .enabledPlugins[$id]=true' "$settings")
+  # Merge, not replace: keep refreshInterval (the countdown sets it) and any user keys such as padding.
+  new=$(jq --arg cmd "$command" --arg id "$PLUGIN_ID" '.statusLine=(((.statusLine|objects) // {}) + {type:"command",command:$cmd}) | .enabledPlugins[$id]=true' "$settings")
 else
   new=$(jq -n --arg cmd "$command" --arg id "$PLUGIN_ID" '{statusLine:{type:"command",command:$cmd},enabledPlugins:{($id):true}}')
 fi

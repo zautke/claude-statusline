@@ -48,6 +48,8 @@ $chord = $RESETS_TOGGLE_DEFAULT_KEY_CHORD_CTRL_X_THEN_R
 $bind = "command:$($id.RESETS_COMMAND_NAME)"
 
 function Warn([string]$m) { [Console]::Error.WriteLine("install.ps1: $m") }
+# A failed write (e.g. settings.json held open by an editor) stops the run with one line and exit 1, never "Installed".
+trap { Warn $_.Exception.Message; exit 1 }
 # Follow links so a dotfiles-managed file keeps its link (from resize-watch.ps1).
 function Resolve-Target([string]$p) {
     try { $item = Get-Item -LiteralPath $p -Force -ErrorAction Stop; if ($item.LinkType) { $t = $item.ResolveLinkTarget($true); if ($t) { return $t.FullName } } } catch { }
@@ -56,9 +58,13 @@ function Resolve-Target([string]$p) {
 # Temp file beside the target, original ACL carried over, then rename. Writes $text exactly.
 function Write-Atomic([string]$dst, [string]$text, [bool]$bom = $false) {
     $tmp = Join-Path (Split-Path -Parent $dst) ".$(Split-Path -Leaf $dst).$PID.$([guid]::NewGuid().ToString('N').Substring(0, 6))"
-    [IO.File]::WriteAllText($tmp, $text, [Text.UTF8Encoding]::new($bom))
-    if (Test-Path -LiteralPath $dst) { try { Get-Acl -LiteralPath $dst | Set-Acl -LiteralPath $tmp } catch { } }
-    Move-Item -LiteralPath $tmp -Destination $dst -Force
+    # Move-Item errors are non-terminating by default: Stop makes a failed rename throw to the caller, and finally
+    # removes the temp file on every path (as resets-toggle.ps1).
+    try {
+        [IO.File]::WriteAllText($tmp, $text, [Text.UTF8Encoding]::new($bom))
+        if (Test-Path -LiteralPath $dst) { try { Get-Acl -LiteralPath $dst | Set-Acl -LiteralPath $tmp -ErrorAction Stop } catch { } }
+        Move-Item -LiteralPath $tmp -Destination $dst -Force -ErrorAction Stop
+    } finally { if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } }
 }
 function Read-Json([string]$p) { Get-Content -Raw -LiteralPath $p | ConvertFrom-Json -AsHashtable -DateKind String -ErrorAction Stop }
 function To-Json($o) { ($o | ConvertTo-Json -Depth 100).Replace("`r`n", "`n") + "`n" }
@@ -140,8 +146,19 @@ function Uninstall-Keybinding {
 $regRoot = if ($env:CLAUDE_STATUSLINE_REGISTRY_ROOT) { $env:CLAUDE_STATUSLINE_REGISTRY_ROOT } else { 'HKCU:\Software\Classes' }
 $regKey = "$regRoot\$scheme"
 $regCmdKey = "$regKey\shell\open\command"
-$handlerCmd = "conhost.exe --headless pwsh -NoProfile -NonInteractive -File `"$([IO.Path]::GetFullPath($launcher))`" --url `"%1`""
+function Get-HandlerCmdFor([string]$l) { "conhost.exe --headless pwsh -NoProfile -NonInteractive -File `"$([IO.Path]::GetFullPath($l))`" --url `"%1`"" }
+$handlerCmd = Get-HandlerCmdFor $launcher
 $handlerOk = $false
+# Launcher of the first other profile under HOME (~/.claude, ~/.claude-<name>) whose renderer still draws links
+# (marker present). Any profile's launcher serves any profile's click: the URL carries &profile=.
+function Get-OtherLauncher {
+    $self = [IO.Path]::GetFullPath($ConfigDir).TrimEnd('\', '/')
+    foreach ($d in Get-ChildItem -LiteralPath $homeDir -Directory -Force -ErrorAction SilentlyContinue | Sort-Object Name) {
+        if (($d.Name -cne '.claude' -and $d.Name -cnotlike '.claude-*') -or [IO.Path]::GetFullPath($d.FullName).TrimEnd('\', '/') -eq $self) { continue }
+        $l = Join-Path $d.FullName "$($id.LAUNCHER_HOME)/scripts/statusline-launch.ps1"
+        if ((Test-Path -LiteralPath (Join-Path $d.FullName "$($id.LAUNCHER_HOME)/url-handler") -PathType Leaf) -and (Test-Path -LiteralPath $l -PathType Leaf)) { return $l }
+    }
+}
 function Get-HandlerCmd {
     if (-not (Test-Path -LiteralPath $regKey)) { return $null }
     if (-not (Test-Path -LiteralPath $regCmdKey)) { return '' }
@@ -164,8 +181,14 @@ function Install-Handler {
     } catch { Warn "could not register the $scheme click handler: $($_.Exception.Message)" }
 }
 function Uninstall-Handler {
-    # Only the key that runs THIS profile's launcher; another profile's (or program's) handler stays.
-    try { if ((Get-HandlerCmd) -eq $handlerCmd) { Remove-Item -LiteralPath $regKey -Recurse -Force } } catch { Warn "could not remove the $scheme click handler: $($_.Exception.Message)" }
+    # Only the key that runs THIS profile's launcher; another profile's (or program's) handler stays. If another
+    # profile still draws links, the key moves to that profile's launcher instead of leaving its clicks dangling.
+    try {
+        if ((Get-HandlerCmd) -ne $handlerCmd) { return }
+        $next = Get-OtherLauncher
+        if ($next) { Set-Item -LiteralPath $regCmdKey -Value (Get-HandlerCmdFor $next); "Moved the $scheme click handler to $next" }
+        else { Remove-Item -LiteralPath $regKey -Recurse -Force }
+    } catch { Warn "could not remove the $scheme click handler: $($_.Exception.Message)" }
 }
 
 # ---- Windows Terminal safeUriSchemes: text edit that keeps comments and formatting ----
@@ -295,7 +318,10 @@ Copy-Item -Force -LiteralPath (Join-Path $pluginRoot 'config/identity.env'), (Jo
 
 if ($settings.enabledPlugins -isnot [Collections.IDictionary]) { $settings.enabledPlugins = [ordered]@{} }
 $settings.enabledPlugins[$id.PLUGIN_ID] = $true
-$settings.statusLine = [ordered]@{ type = 'command'; command = "pwsh -NoProfile -NonInteractive -File `"$launcher`"" }
+# Merge, not replace: keep refreshInterval (the countdown sets it) and any user keys such as padding.
+$line = if ($settings.statusLine -is [Collections.IDictionary]) { $settings.statusLine } else { [ordered]@{} }
+$line['type'] = 'command'; $line['command'] = "pwsh -NoProfile -NonInteractive -File `"$launcher`""
+$settings.statusLine = $line
 Write-Atomic $settingsPath (To-Json $settings)
 
 Install-Keybinding
