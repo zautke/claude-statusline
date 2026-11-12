@@ -2,6 +2,8 @@
 # Stable statusLine.command target. Lives in <config-dir>/claude-statusline/ (copied there by
 # install.sh), finds the installed plugin version in installed_plugins.json, and runs that
 # version's dispatcher, so plugin updates reach the status line without a settings edit.
+# With --url it hands a status-line click to that version's resets-toggle instead (the registered
+# URL handler calls this).
 set -uo pipefail
 
 home=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -10,12 +12,15 @@ home=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 load_identity "$home/config/identity.env"
 
 Usage() {
-  printf 'Usage: %s [-h|--help]\n\nReads Claude Code status JSON on stdin and runs the installed %s renderer.\n' "${0##*/}" "$PLUGIN_ID"
+  printf 'Usage: %s [-u|--url URI] [-h|--help]\n\nReads Claude Code status JSON on stdin and runs the installed %s renderer.\n  -u, --url URI  Pass a status-line click URL to the installed resets-toggle instead.\n' "${0##*/}" "$PLUGIN_ID"
 }
 
+url_mode=0 url=
+# The resize/toggle nonce " # bsl-cols=N" arrives as argv when no shell strips the comment: ignore it and the rest.
 case "${1:-}" in
   -h|--help) Usage; exit 0 ;;
-  '') ;;
+  -u|--url) [[ $# -eq 2 || ( $# -gt 2 && ${3:-} == '#'* ) ]] || { Usage >&2; exit 2; }; url_mode=1 url=$2 ;;
+  ''|'#'*) ;;
   *) Usage >&2; exit 2 ;;
 esac
 
@@ -27,6 +32,12 @@ root=$(jq -r --arg id "$PLUGIN_ID" \
   '(.plugins[$id] // []) | (map(select(.scope == "user")) + map(select(.scope != "user"))) | .[].installPath // empty' \
   "$plugins_dir/installed_plugins.json" 2>/dev/null |
   while IFS= read -r p; do [[ -d $p ]] && { printf '%s' "$p"; break; }; done)
+
+if ((url_mode)); then
+  [[ -n $root && -f $root/scripts/resets-toggle.sh ]] || { printf '%s\n' "$NOT_INSTALLED_MESSAGE" >&2; exit 1; }
+  # URL as one argv element; never through a shell string.
+  exec bash "$root/scripts/resets-toggle.sh" --url "$url"
+fi
 
 if [[ -z $root || ! -f $root/scripts/statusline-dispatcher.sh ]]; then
   printf '%s\n' "$NOT_INSTALLED_MESSAGE"

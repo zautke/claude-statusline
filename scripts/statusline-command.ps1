@@ -13,6 +13,8 @@ function Usage {
 
 if ($Help) { Usage; exit 0 }
 
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'config/constants.ps1')
+
 # Claude Code on Windows requires Git Bash. Reuse canonical renderer so both
 # entry points share validation, configuration, cache, and OAuth behavior.
 $bash = Get-Command bash -ErrorAction SilentlyContinue
@@ -46,14 +48,14 @@ if (Test-Path -LiteralPath $configPath) {
     try {
         $cfg = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
         # All-or-nothing, as in the Bash renderer: any invalid fit field rejects the whole file.
-        $knownLadder = @('disk_label','ctx_int','no_parens','disk_int','ctx_no_total','no_free','fable_short','disk_value','ctx_no_used','fable_label','fable_segment','seven_label','five_label','ctx_label','seven_segment','five_segment')
+        $knownLadder = @('resets','disk_label','ctx_int','no_parens','disk_int','ctx_no_total','no_free','fable_short','disk_value','ctx_no_used','fable_label','fable_segment','seven_label','five_label','ctx_label','seven_segment','five_segment')
         function Test-Int($v) { return ($v -is [int] -or $v -is [long]) }
         if ($null -ne $cfg.fit) {
             if ($cfg.fit -isnot [System.Management.Automation.PSCustomObject]) { throw 'invalid fit' }
             if ($null -ne $cfg.fit.rows -and -not (Test-Int $cfg.fit.rows)) { throw 'invalid fit.rows' }
             if ($null -ne $cfg.fit.reserve -and -not (Test-Int $cfg.fit.reserve)) { throw 'invalid fit.reserve' }
             if ($null -ne $cfg.fit.min_bar_cells -and -not (Test-Int $cfg.fit.min_bar_cells)) { throw 'invalid fit.min_bar_cells' }
-            if ($null -ne $cfg.fit.ladder -and (-not ($cfg.fit.ladder -is [array]) -or @($cfg.fit.ladder | Where-Object { $_ -notin $knownLadder }).Count -gt 0)) { throw 'invalid fit.ladder' }
+            if ($null -ne $cfg.fit.ladder -and (-not ($cfg.fit.ladder -is [array]) -or @($cfg.fit.ladder | Where-Object { $_ -cnotin $knownLadder }).Count -gt 0)) { throw 'invalid fit.ladder' }
             if ($null -ne $cfg.fit.rows -and $cfg.fit.rows -notin 1, 2) { throw 'invalid fit.rows' }
             if ($null -ne $cfg.fit.reserve -and ($cfg.fit.reserve -lt 0 -or $cfg.fit.reserve -gt 200)) { throw 'invalid fit.reserve' }
             if ($null -ne $cfg.fit.min_bar_cells -and ($cfg.fit.min_bar_cells -lt 1 -or $cfg.fit.min_bar_cells -gt 128)) { throw 'invalid fit.min_bar_cells' }
@@ -74,6 +76,8 @@ if (Test-Path -LiteralPath $configPath) {
             if ($cfg.widths -isnot [System.Management.Automation.PSCustomObject]) { throw 'invalid widths' }
             foreach ($p in $cfg.widths.PSObject.Properties) { if (-not (Test-Int $p.Value) -or $p.Value -lt 1 -or $p.Value -gt 128) { throw 'invalid widths' } }
         }
+        if ($null -ne $cfg.resets -and $cfg.resets -isnot [bool]) { throw 'invalid resets' }
+        if ($null -ne $cfg.resets_format -and ($cfg.resets_format -isnot [string] -or $cfg.resets_format -cnotin 'clock', 'countdown')) { throw 'invalid resets_format' }
         if ($null -ne $cfg.fable.refresh_seconds -and $cfg.fable.refresh_seconds -lt 60) { throw 'invalid fable.refresh_seconds' }
         if ($null -ne $cfg.fable.max_stale_seconds -and $cfg.fable.max_stale_seconds -lt 60) { throw 'invalid fable.max_stale_seconds' }
         if ($cfg.fable.model) { $fableModel = [string]$cfg.fable.model }
@@ -84,6 +88,9 @@ if (Test-Path -LiteralPath $configPath) {
         if ($cfg.fable.max_stale_seconds) { $fableMaxStale = [int64]$cfg.fable.max_stale_seconds }
     } catch { $cfg = $null; $fableModel = 'Fable'; $fableLabel = 'Fable'; $fableWidth = 12; $fitReserve = 0; $minBarCells = 5; $resizeWatch = $false; $fableRefreshSeconds = 600; $fableMaxStale = 86400 }
 }
+# Reset-time mode: off | clock | countdown.
+$resetsMode = 'clock'
+if ($cfg) { if ($cfg.resets -eq $false) { $resetsMode = 'off' } elseif ($cfg.resets_format) { $resetsMode = [string]$cfg.resets_format } }
 # Labels, bar widths and segment order, as in the Bash renderer ($cfg is $null when the file is absent or invalid).
 $L = @{ context = 'ctx'; disk = 'disk'; tmp = '/tmp'; five_hour = '5h'; seven_day = '7d'; fable = 'Fable' }
 $Wd = @{ context = 12; disk = 12; tmp = 15; five_hour = 12; seven_day = 12; fable = 12 }
@@ -137,12 +144,13 @@ function Refresh-Fable {
         if ((Get-NextRefresh) -gt $now) { return }
         # Claim the slot before the request so a failure backs off instead of retrying on every render.
         Set-Content -LiteralPath $nextRefreshFile -Value ($now + $fableRefreshSeconds) -NoNewline
-        $response = Invoke-RestMethod -Uri ($env:CLAUDE_STATUSLINE_USAGE_URL ?? 'https://api.anthropic.com/api/oauth/usage') -Headers @{
+        # Parse the body ourselves: Invoke-RestMethod turns ISO-8601 strings (resets_at) into DateTime, and the [string] cast below would cache them in the local culture.
+        $response = (Invoke-WebRequest -Uri ($env:CLAUDE_STATUSLINE_USAGE_URL ?? 'https://api.anthropic.com/api/oauth/usage') -Headers @{
             Authorization = "Bearer $token"
             'anthropic-beta' = 'oauth-2025-04-20'
             Accept = 'application/json'
             'User-Agent' = 'claude-code/claude-statusline'
-        } -TimeoutSec 8
+        } -TimeoutSec 8).Content | ConvertFrom-Json -DateKind String
         $limits = if ($response.limits) { $response.limits } elseif ($response.cachedUsageUtilization.utilization.limits) { $response.cachedUsageUtilization.utilization.limits } else { @() }
         $limit = @($limits | Where-Object {
             $_.kind -eq 'weekly_scoped' -and
@@ -216,7 +224,7 @@ $input_data = [Console]::In.ReadToEnd()
 
 $ESC     = [char]27
 $R       = "$ESC[0m"
-$C_MODEL = "$ESC[1;38;2;86;182;194m"   # steel-blue bold
+$C_MODEL = "$ESC[1;38;5;75m"            # bold blue, as the Bash renderer
 $C_LABEL = "$ESC[38;5;240m"             # dim gray labels
 $C_SEP   = "$ESC[38;5;237m"             # separator pipe
 $C_VAL   = "$ESC[38;5;243m"             # dim value text
@@ -224,18 +232,31 @@ $C_EMPTY = "$ESC[38;5;59m"              # medium gray empty cells
 # NO_COLOR (https://no-color.org): plain text, as in the Bash renderer.
 $noColor = [bool]$env:NO_COLOR
 if ($noColor) { $R = ''; $C_MODEL = ''; $C_LABEL = ''; $C_SEP = ''; $C_VAL = ''; $C_EMPTY = '' }
+# Ctrl+click links (OSC 8) over the whole 5h and 7d slots, built once. None under tmux, WSL or NO_COLOR, without the
+# URL-handler marker, or unless the config dir is ~/.claude or ~/.claude-<name> (then &profile=<name>).
+$id = ConvertFrom-StringData (Get-Content -Raw -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'config/identity.env'))
+$link5 = ''; $link7 = ''; $linkClose = ''; $linkQuery = $null
+$cfgFull = [IO.Path]::GetFullPath($configDir).TrimEnd('\', '/'); $homeFull = [IO.Path]::GetFullPath($HOME).TrimEnd('\', '/')
+if ($cfgFull -eq [IO.Path]::Combine($homeFull, '.claude')) { $linkQuery = '' }
+elseif ([IO.Path]::GetDirectoryName($cfgFull) -eq $homeFull -and [IO.Path]::GetFileName($cfgFull) -cmatch $CONFIG_DIR_LEAF_DOT_CLAUDE_HYPHEN_PROFILE_NAME_LETTERS_DIGITS_DOT_UNDERSCORE_HYPHEN) { $linkQuery = "&profile=$($Matches[1])" }
+if ($null -ne $linkQuery -and -not ($env:TMUX -or $env:WSL_DISTRO_NAME -or $noColor) -and (Test-Path -LiteralPath (Join-Path $cfgFull "$($id.LAUNCHER_HOME)/url-handler"))) {
+    $linkClose = "$ESC]8;;$ESC\"
+    $link5 = "$ESC]8;id=bsl-5h;$($id.URL_SCHEME)://toggle?slot=5h$linkQuery$ESC\"
+    $link7 = "$ESC]8;id=bsl-7d;$($id.URL_SCHEME)://toggle?slot=7d$linkQuery$ESC\"
+}
 
 
 function Get-CellColor([int]$pos) {
     if ($noColor) { return '' }
+    # Integer division as in the Bash renderer: [int] would round half-to-even and drift one step off the twin.
     if ($pos -le 50) {
-        $r = 40  + [int](180 * $pos / 50)
-        $g = 170 - [int](10  * $pos / 50)
-        $b = 60  - [int](60  * $pos / 50)
+        $r = 40  + [math]::Floor(180 * $pos / 50)
+        $g = 170 - [math]::Floor(10  * $pos / 50)
+        $b = 60  - [math]::Floor(60  * $pos / 50)
     } else {
         $p2 = $pos - 50
-        $r = 220 - [int](40  * $p2 / 50)
-        $g = 160 - [int](160 * $p2 / 50)
+        $r = 220 - [math]::Floor(40  * $p2 / 50)
+        $g = 160 - [math]::Floor(160 * $p2 / 50)
         $b = 0
     }
     return "$ESC[38;2;${r};${g};${b}m"
@@ -294,7 +315,7 @@ function Test-Wide([int]$cp) {
             ($cp -ge 0x1F300 -and $cp -le 0x1FAFF) -or ($cp -ge 0x20000 -and $cp -le 0x3FFFD))
 }
 function Get-Cells([string]$s) {
-    $plain = $s -replace "$ESC\[[0-9;]*m", ''
+    $plain = ($s -replace "$ESC\[[0-9;]*m", '') -replace $ANSI_OSC8_HYPERLINK_SEQUENCE_ESC_RIGHT_BRACKET_8_PARAMS_URI_TERMINATED_BY_ST_OR_BEL, ''
     $n = 0
     for ($i = 0; $i -lt $plain.Length; $i++) {
         $cp = [char]::ConvertToUtf32($plain, $i)
@@ -353,9 +374,32 @@ if ($IsWindows) {
 }
 $fivePct = if ($null -ne $rl5h) { [int][math]::Round($rl5h) } else { $null }
 $sevenPct = if ($null -ne $rl7d) { [int][math]::Round($rl7d) } else { $null }
+# Reset text per slot, once: resets_at rounded up to the minute, then clock (local HH:mm / day code + HH) or countdown.
+$nowEpoch = 0L
+if (-not ($env:CLAUDE_STATUSLINE_NOW -match $NON_NEGATIVE_INTEGER_DIGITS_ONLY -and [long]::TryParse($env:CLAUDE_STATUSLINE_NOW, [ref]$nowEpoch))) { $nowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
+function Get-ResetText($at, [string]$slot) {
+    if ($resetsMode -eq 'off' -or -not ($at -is [int] -or $at -is [long] -or $at -is [double] -or $at -is [decimal])) { return '' }
+    if ($at -lt 0 -or $at -gt $RESETS_AT_LATEST_RENDERABLE_EPOCH_SECONDS_9999_12_31_23_59_00_UTC) { return '' }
+    $up = [long]([math]::Ceiling([double]$at / 60) * 60)
+    if ($resetsMode -eq 'clock') {
+        $t = [DateTimeOffset]::FromUnixTimeSeconds($up).ToLocalTime(); $ic = [Globalization.CultureInfo]::InvariantCulture
+        $s = if ($slot -eq '5h') { $t.ToString('HH:mm', $ic) } else { $WEEKDAY_CODES_SUNDAY_FIRST_SU_M_T_W_R_F_SA[[int]$t.DayOfWeek] + $t.ToString('HH', $ic) }
+    } else {
+        $m = [math]::Max(0L, [long][math]::Ceiling(($up - $nowEpoch) / 60.0))
+        $s = if ($m -ge 1440) { "$([math]::Floor($m / 1440))d$([math]::Floor($m % 1440 / 60))h" } elseif ($m -ge 60) { "$([math]::Floor($m / 60))h$($m % 60)m" } else { "${m}m" }
+    }
+    return "$RESET_TIME_GLYPH_CLOCKWISE_OPEN_CIRCLE_ARROW$s"
+}
+# Appended to a 5h/7d slot's values: reset text and the click glyph, or the "hidden" glyph when resets are off.
+function Get-ResetTail([string]$text) {
+    if ($resetsMode -eq 'off') { return " ${C_VAL}${RESETS_CLICK_GLYPH_HIDDEN_SQUARED_PLUS_THEN_LEFT_POINTING_SMALL_TRIANGLE}${R}" }
+    return " ${C_VAL}$($text ? "$text " : '')${RESETS_CLICK_GLYPH_SHOWN_SQUARED_MINUS_THEN_LEFT_POINTING_SMALL_TRIANGLE}${R}"
+}
+$fiveTail = Get-ResetTail (Get-ResetText $j.rate_limits.five_hour.resets_at '5h')
+$sevenTail = Get-ResetTail (Get-ResetText $j.rate_limits.seven_day.resets_at '7d')
 
 # ---- exclusion ladder: ordered flags the builders consult; each step buys cells when nothing else fits ----
-$defaultLadder = @('disk_label','ctx_int','no_parens','disk_int','ctx_no_total','no_free','fable_short','disk_value','ctx_no_used','fable_label','fable_segment','seven_label','five_label','ctx_label','seven_segment','five_segment')
+$defaultLadder = @('resets','disk_label','ctx_int','no_parens','disk_int','ctx_no_total','no_free','fable_short','disk_value','ctx_no_used','fable_label','fable_segment','seven_label','five_label','ctx_label','seven_segment','five_segment')
 $ladder = $defaultLadder; $fitRows = 1
 if ($cfg) {
     if ($cfg.fit.ladder -is [array]) { $ladder = @($cfg.fit.ladder) }
@@ -369,6 +413,7 @@ function Add-Bar([string]$top, [string]$bar) { if ($bar) { return ($top ? "$top 
 function Build {
     $script:segTop = [System.Collections.Generic.List[string]]::new()
     $script:segBot = [System.Collections.Generic.List[string]]::new()
+    $script:segLink = [System.Collections.Generic.List[string]]::new()
     foreach ($s in $segList) {
         $top = ''; $bot = ''
         switch ($s) {
@@ -397,11 +442,13 @@ function Build {
                 if ($null -eq $fivePct -or $F['five_segment']) { continue }
                 if (-not $F['five_label']) { $top = "${C_LABEL}$($L['five_hour'])${R}" }
                 $top = Add-Bar $top (Get-FitBar $fivePct $Wd['five_hour']); $bot = Get-Paren (Format-PctText $fivePct)
+                if (-not $F['resets']) { $bot += $fiveTail }
             }
             'seven_day' {
                 if ($null -eq $sevenPct -or $F['seven_segment']) { continue }
                 if (-not $F['seven_label']) { $top = "${C_LABEL}$($L['seven_day'])${R}" }
                 $top = Add-Bar $top (Get-FitBar $sevenPct $Wd['seven_day']); $bot = Get-Paren (Format-PctText $sevenPct)
+                if (-not $F['resets']) { $bot += $sevenTail }
             }
             'fable' {
                 if ($F['fable_segment']) { continue }
@@ -412,18 +459,22 @@ function Build {
         }
         if (-not ($top + $bot)) { continue }
         $script:segTop.Add($top); $script:segBot.Add($bot)
+        $script:segLink.Add($(switch ($s) { 'five_hour' { $link5 } 'seven_day' { $link7 } default { '' } }))
     }
 }
+# Wraps $text in link $open; empty text or no link leaves it bare.
+function Add-Link([string]$open, [string]$text) { if ($open -and $text) { return "$open$text$linkClose" } else { return $text } }
 # flat: one row, "top bot" per segment. stacked: two rows, each segment padded to max(top,bot) so columns align.
 function Assemble-Flat {
-    $parts = for ($i = 0; $i -lt $segTop.Count; $i++) { $t = $segTop[$i]; $b = $segBot[$i]; if ($t -and $b) { "$t $b" } else { "$t$b" } }
+    $parts = for ($i = 0; $i -lt $segTop.Count; $i++) { $t = $segTop[$i]; $b = $segBot[$i]; Add-Link $segLink[$i] ($(if ($t -and $b) { "$t $b" } else { "$t$b" })) }
     $script:row1 = $parts -join (Get-Sep); $script:row2 = ''
 }
 function Assemble-Stacked {
     $r1 = @(); $r2 = @()
     for ($i = 0; $i -lt $segTop.Count; $i++) {
         $t = $segTop[$i]; $b = $segBot[$i]; $wt = Get-Cells $t; $wb = Get-Cells $b; $w = [math]::Max($wt, $wb)
-        $r1 += $t + (' ' * ($w - $wt)); $r2 += $b + (' ' * ($w - $wb))
+        # Padding stays outside the link.
+        $r1 += (Add-Link $segLink[$i] $t) + (' ' * ($w - $wt)); $r2 += (Add-Link $segLink[$i] $b) + (' ' * ($w - $wb))
     }
     $script:row1 = $r1 -join (Get-Sep); $script:row2 = $r2 -join (Get-Sep)
     # Claude Code trims leading whitespace per row; pad row starts with U+2800 (renders blank, counts one cell).
@@ -445,7 +496,6 @@ if ($env:COLUMNS -match '^\d+$') { $columns = [int]$env:COLUMNS }
 # Native Windows without COLUMNS: the attached console's visible width (0 when no console is attached).
 if ($columns -le 0) { try { $columns = [Console]::WindowWidth } catch { $columns = 0 } }
 if ($columns -le 0) { Build; Assemble-Flat; Emit }
-. (Join-Path (Split-Path -Parent $PSScriptRoot) 'config/constants.ps1')
 $budget = [math]::Max(1, $columns - $STATUS_LINE_AREA_HORIZONTAL_MARGIN_CELLS - $fitReserve)
 # Stage 1: full bars.
 if (Try-Layouts) { Emit }

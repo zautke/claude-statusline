@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -u
 
+_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=../config/constants.sh
+. "$_root/config/constants.sh"
+# shellcheck source=../config/load-identity.sh
+. "$_root/config/load-identity.sh"; load_identity "$_root/config/identity.env"
+
 Usage() {
   printf '%s\n' 'Usage: statusline-command.sh [-h|--help] [-r|--refresh-fable]'
 }
@@ -32,7 +38,8 @@ valid_config() {
     ((.widths//{})|to_entries|all(.value|type=="number" and floor==. and .>=1 and .<=128)) and
     ((.fit|if .==null then {} else . end)|type=="object") and
     ((.fit.reserve|if .==null then 0 else . end)|type=="number" and floor==. and .>=0 and .<=200) and ((.fit.min_bar_cells|if .==null then 5 else . end)|type=="number" and floor==. and .>=1 and .<=128) and ((.fit.resize_watch|if .==null then false else . end)|type=="boolean") and ((.fit.rows|if .==null then 1 else . end)|IN(1,2)) and
-    ((.fit.ladder|if .==null then [] else . end)|type=="array" and all(IN("disk_label","ctx_int","no_parens","disk_int","ctx_no_total","no_free","fable_short","disk_value","ctx_no_used","fable_label","fable_segment","seven_label","five_label","ctx_label","seven_segment","five_segment"))) and
+    ((.resets|if .==null then true else . end)|type=="boolean") and ((.resets_format|if .==null then "clock" else . end)|IN("clock","countdown")) and
+    ((.fit.ladder|if .==null then [] else . end)|type=="array" and all(IN("resets","disk_label","ctx_int","no_parens","disk_int","ctx_no_total","no_free","fable_short","disk_value","ctx_no_used","fable_label","fable_segment","seven_label","five_label","ctx_label","seven_segment","five_segment"))) and
     ((.fable.refresh_seconds//600)>=60) and ((.fable.max_stale_seconds//86400)>=60)
   ' "$config_file" >/dev/null 2>&1
 }
@@ -54,6 +61,8 @@ max_stale=$(get_cfg '.fable.max_stale_seconds' '86400')
 fable_model=$(get_cfg '.fable.model' '"Fable"')
 fit_reserve=$(get_cfg '.fit.reserve' '0')
 min_bar_cells=$(get_cfg '.fit.min_bar_cells' '5')
+# Reset-time mode: off | clock | countdown. No jq // on .resets: it treats false as absent.
+resets_mode=clock; [[ -n "$cfg" ]]&&resets_mode=$(jq -r 'if .resets==false then "off" else (.resets_format // "clock") end' "$cfg")
 
 oauth_token() {
   if [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then printf '%s' "$CLAUDE_CODE_OAUTH_TOKEN"; return; fi
@@ -134,12 +143,30 @@ input=$(cat)
 [[ -e $cache_dir/trace ]] && printf '%s render COLUMNS=%s live=%s\n' "$(date +%s.%N)" "${COLUMNS:-}" "${live_cols:-}" >>"$cache_dir/trace"
 if [[ -n ${NO_COLOR:-} ]]; then reset= model_color= label_color= sep_color= value_color= empty_color=
 else reset=$'\033[0m'; model_color=$'\033[1;38;5;75m'; label_color=$'\033[38;5;240m'; sep_color=$'\033[38;5;237m'; value_color=$'\033[38;5;243m'; empty_color=$'\033[38;5;59m'; fi
+# Ctrl+click links (OSC 8) over the whole 5h and 7d slots, built once. None under tmux, WSL or NO_COLOR, without the
+# URL-handler marker, or unless the config dir is ~/.claude or ~/.claude-<name> (then &profile=<name>).
+link5= link7= link_close=; _d=${config_dir%/} _q=-
+if [[ $_d == "$HOME/.claude" ]]; then _q=; elif [[ ${_d%/*} == "$HOME" && ${_d##*/} =~ $CONFIG_DIR_LEAF_DOT_CLAUDE_HYPHEN_PROFILE_NAME_LETTERS_DIGITS_DOT_UNDERSCORE_HYPHEN ]]; then _q="&profile=${BASH_REMATCH[1]}"; fi
+if [[ $_q != - && -z ${TMUX+x}${WSL_DISTRO_NAME+x}${NO_COLOR:-} && -e $_d/$LAUNCHER_HOME/url-handler ]]; then
+  link_close=$'\033]8;;\033\\'
+  link5=$'\033]8;id=bsl-5h;'"$URL_SCHEME://toggle?slot=5h$_q"$'\033\\'
+  link7=$'\033]8;id=bsl-7d;'"$URL_SCHEME://toggle?slot=7d$_q"$'\033\\'
+fi
+unset _d _q
 
-# ${#var} must count characters, not bytes: pick a UTF-8 locale if the host left us in a byte locale.
-_g='█'; if ((${#_g}!=1)); then for _l in C.UTF-8 en_US.UTF-8; do LC_ALL=$_l; ((${#_g}==1))&&break; done; fi
+# ${#var} and ${var:0:1} on labels must count characters, not bytes: if the host left us in a byte locale (empty under
+# ssh or a GUI launch, C, POSIX, or one that does not exist), switch to a UTF-8 locale that works here. The ${#_g} probe
+# proves the locale is usable without forking `locale -a`. Display widths do not depend on it: cells() is byte-safe.
+# ponytail: with no working UTF-8 locale at all, a non-ASCII label's first-letter step (fable_short) and the 30-char cwd
+# cut-off count bytes; widths stay right. Upgrade path: a byte-safe substring helper if such a host ever appears.
+_o=${LC_ALL-} _g='█'
+if ((${#_g}!=1)); then case $OSTYPE in darwin*) _c='en_US.UTF-8 C.UTF-8';; *) _c='C.UTF-8 en_US.UTF-8';; esac
+  for _l in $_c; do LC_ALL=$_l; ((${#_g}==1))&&break; done; fi
 # Pin LC_ALL explicitly: functions below set a temporary `local LC_ALL=C`, and restoring an unset variable is not
 # portable across Bash versions, so give it a definite value to come back to.
-[[ -n ${LC_ALL:-} ]] || LC_ALL=${LC_CTYPE:-${LANG:-C.UTF-8}}; export LC_ALL; unset _g _l
+[[ -n ${LC_ALL:-} ]] || LC_ALL=${LC_CTYPE:-${LANG:-C.UTF-8}}
+# The switch is this process's own business: child processes (jq, awk, df) keep the locale they were given.
+[[ $LC_ALL == "$_o" ]] || export -n LC_ALL; unset _o _g _c _l
 sep="$sep_color ● $reset"
 # fmt_bytes <bytes> [decimals]
 fmt_bytes() { local b=$1 d=${2:-1}; if ((b>=1073741824)); then awk -v b="$b" -v d="$d" 'BEGIN{printf "%.*fG",d,b/1073741824}'; elif ((b>=1048576)); then awk -v b="$b" -v d="$d" 'BEGIN{printf "%.*fM",d,b/1048576}'; elif ((b>=1024)); then awk -v b="$b" -v d="$d" 'BEGIN{printf "%.*fK",d,b/1024}'; else printf '%dB' "$b"; fi; }
@@ -171,9 +198,19 @@ utf8_cp() { local LC_ALL=C c=$1 b0 b1 b2 b3; printf -v b0 '%d' "'${c:0:1}"; ((b0
     3) printf -v b1 '%d' "'${c:1:1}"; printf -v b2 '%d' "'${c:2:1}"; ((b1<0))&&b1=$((b1+256)); ((b2<0))&&b2=$((b2+256)); cp=$(((b0&0x0F)<<12|(b1&0x3F)<<6|(b2&0x3F)));;
     *) printf -v b1 '%d' "'${c:1:1}"; printf -v b2 '%d' "'${c:2:1}"; printf -v b3 '%d' "'${c:3:1}"; ((b1<0))&&b1=$((b1+256)); ((b2<0))&&b2=$((b2+256)); ((b3<0))&&b3=$((b3+256)); cp=$(((b0&0x07)<<18|(b1&0x3F)<<12|(b2&0x3F)<<6|(b3&0x3F)));; esac; }
 cells() {
-  local s=$1 pre rest
-  while [[ $s == *$'\033['*m* ]]; do pre=${s%%$'\033['*}; rest=${s#*$'\033['}; s=$pre${rest#*m}; done
-  N=${#s}; count_wide "$s"; N=$((N+W))
+  # Byte-wise under LC_ALL=C whatever the host locale: no UTF-8 locale is needed for the count, and [[ == ]] and the
+  # ${s#...} strips agree on every byte. Each loop also stops unless the strip shrank $s, so it always terminates.
+  local LC_ALL=C s=$1 pre rest a b n o=$'\033]8;' st=$'\033\\' bel=$'\a'
+  # OSC 8 hyperlinks: drop ESC ] 8 ; params ; uri through its ST (ESC \) or BEL, whichever comes first.
+  while [[ $s == *"$o"* ]]; do
+    n=${#s}; pre=${s%%"$o"*}; rest=${s#*"$o"}; a=${rest#*"$st"}; b=${rest#*"$bel"}
+    if [[ $a != "$rest" && ( $b == "$rest" || ${#a} -ge ${#b} ) ]]; then s=$pre$a; elif [[ $b != "$rest" ]]; then s=$pre$b; else break; fi
+    ((${#s}<n))||break
+  done
+  while [[ $s == *$'\033['*m* ]]; do n=${#s}; pre=${s%%$'\033['*}; rest=${s#*$'\033['}; s=$pre${rest#*m}; ((${#s}<n))||break; done
+  # Characters = bytes minus UTF-8 continuation bytes (0x80-0xBF).
+  rest=${s//[$'\x80'-$'\xbf']/}
+  N=${#rest}; count_wide "$s"; N=$((N+W))
 }
 # Extra cells for East Asian Wide / emoji characters. Works byte-wise under LC_ALL=C because Bash 3.2's pattern
 # matching mangles multibyte characters in a UTF-8 locale; only the non-ASCII bytes are walked, so it stays fast.
@@ -210,9 +247,25 @@ _x=$(df -k /tmp 2>/dev/null|tail -1); if [[ $(awk '{print $1}'<<<"$_x") == tmpfs
 five_pct=; [[ $five != null && -n $five ]]&&five_pct=$(printf '%.0f' "$five")
 seven_pct=; [[ $seven != null && -n $seven ]]&&seven_pct=$(printf '%.0f' "$seven")
 fable_pct=; [[ $fable != null && -n $fable ]]&&fable_pct=$(printf '%.0f' "$fable")
+# Reset text per slot, once: resets_at rounded up to the minute, then clock (local HH:MM / day code + HH) or countdown.
+five_reset= seven_reset=
+if [[ $resets_mode != off ]]; then
+  now=${CLAUDE_STATUSLINE_NOW:-}; [[ $now =~ $NON_NEGATIVE_INTEGER_DIGITS_ONLY ]] || now=$(date +%s)
+  { IFS= read -r five_reset; IFS= read -r seven_reset; } < <(jq -r --arg mode "$resets_mode" --argjson now "$now" --arg g "$RESET_TIME_GLYPH_CLOCKWISE_OPEN_CIRCLE_ARROW" --arg days "${WEEKDAY_CODES_SUNDAY_FIRST_SU_M_T_W_R_F_SA[*]}" --argjson max "$RESETS_AT_LATEST_RENDERABLE_EPOCH_SECONDS_9999_12_31_23_59_00_UTC" '
+    def txt($slot): if type != "number" or . < 0 or . > $max then "" else ((./60|ceil)*60) as $at |
+      if $mode == "clock" then
+        if $slot == "5h" then $at|strflocaltime("%H:%M") else ($days|split(" "))[$at|strflocaltime("%w")|tonumber] + ($at|strflocaltime("%H")) end
+      else ((($at-$now)/60|ceil) as $c | if $c > 0 then $c else 0 end) as $m |
+        if $m >= 1440 then "\($m/1440|floor)d\($m%1440/60|floor)h" elif $m >= 60 then "\($m/60|floor)h\($m%60)m" else "\($m)m" end
+      end | $g + . end;
+    (.rate_limits.five_hour.resets_at|txt("5h")), (.rate_limits.seven_day.resets_at|txt("7d"))' <<<"$input" 2>/dev/null)
+fi
+# Appended to a 5h/7d slot's values: reset text and the click glyph, or the "hidden" glyph when resets are off.
+reset_tail() { if [[ $resets_mode == off ]]; then TAIL=" $value_color$RESETS_CLICK_GLYPH_HIDDEN_SQUARED_PLUS_THEN_LEFT_POINTING_SMALL_TRIANGLE$reset"; else TAIL=" $value_color${1:+$1 }$RESETS_CLICK_GLYPH_SHOWN_SQUARED_MINUS_THEN_LEFT_POINTING_SMALL_TRIANGLE$reset"; fi; }
+reset_tail "$five_reset"; five_tail=$TAIL; reset_tail "$seven_reset"; seven_tail=$TAIL
 
 # ---- exclusion ladder: ordered flags the builders consult; each step buys cells when nothing else fits ----
-default_ladder='disk_label ctx_int no_parens disk_int ctx_no_total no_free fable_short disk_value ctx_no_used fable_label fable_segment seven_label five_label ctx_label seven_segment five_segment'
+default_ladder='resets disk_label ctx_int no_parens disk_int ctx_no_total no_free fable_short disk_value ctx_no_used fable_label fable_segment seven_label five_label ctx_label seven_segment five_segment'
 ladder=$default_ladder; [[ -n $cfg ]]&&ladder=$(jq -r --arg d "$default_ladder" '(.fit.ladder // ($d|split(" ")))|join(" ")' "$cfg")
 fit_rows=$(get_cfg '.fit.rows' '1')
 # Ladder flags live in one space-delimited string (Bash 3.2 has no associative arrays): F=" a b ".
@@ -224,7 +277,7 @@ pct_paren() { pct_text "$1"; paren "$PCT"; }               # sets P
 # Builders fill seg_top[] (label + bar) and seg_bot[] (values). A segment with both empty is omitted.
 build() {
   local s top bot used total pct free1 free0 L W
-  seg_top=() seg_bot=()
+  seg_top=() seg_bot=() seg_link=()
   for s in "${seg_list[@]}"; do
     top= bot=
     case $s in
@@ -248,10 +301,10 @@ build() {
         if [[ $F != *" disk_value "* ]]; then if [[ $F == *" disk_int "* ]]; then bot="$value_color$free0$reset"; else bot="$value_color$free1$reset"; fi; [[ $F == *" no_free "* ]]||bot+=" free"; fi ;;
       five_hour)
         [[ -n $five_pct && $F != *" five_segment "* ]]||continue
-        [[ $F == *" five_label "* ]]||top="$label_color$L_five$reset"; bar "$five_pct" "$W_five"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$five_pct"; bot=$P ;;
+        [[ $F == *" five_label "* ]]||top="$label_color$L_five$reset"; bar "$five_pct" "$W_five"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$five_pct"; bot=$P; [[ $F == *" resets "* ]]||bot+=$five_tail ;;
       seven_day)
         [[ -n $seven_pct && $F != *" seven_segment "* ]]||continue
-        [[ $F == *" seven_label "* ]]||top="$label_color$L_seven$reset"; bar "$seven_pct" "$W_seven"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$seven_pct"; bot=$P ;;
+        [[ $F == *" seven_label "* ]]||top="$label_color$L_seven$reset"; bar "$seven_pct" "$W_seven"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$seven_pct"; bot=$P; [[ $F == *" resets "* ]]||bot+=$seven_tail ;;
       fable)
         [[ $F != *" fable_segment "* ]]||continue
         if [[ $F == *" fable_label "* ]]; then :; elif [[ $F == *" fable_short "* ]]; then top="$label_color${L_fable:0:1}$reset"; else top="$label_color$L_fable$reset"; fi
@@ -259,16 +312,20 @@ build() {
     esac
     [[ -n $top$bot ]]||continue
     seg_top+=("$top"); seg_bot+=("$bot")
+    case $s in five_hour) seg_link+=("$link5");; seven_day) seg_link+=("$link7");; *) seg_link+=("");; esac
   done
 }
+# Wraps text $2 in link $1 (sets LNK); empty text or no link leaves it bare.
+wrap_link() { LNK=$2; [[ -n $1 && -n $2 ]]&&LNK=$1$2$link_close; }
 # flat: one row, "top bot" per segment. stacked: two rows, each segment padded to max(top,bot) so columns align.
-assemble_flat() { local i part out=; for i in "${!seg_top[@]}"; do part=${seg_top[i]}; [[ -n $part && -n ${seg_bot[i]} ]]&&part+=' '; part+=${seg_bot[i]}; out+=${out:+$sep}$part; done; row1=$out row2=; }
+assemble_flat() { local i part out=; for i in "${!seg_top[@]}"; do part=${seg_top[i]}; [[ -n $part && -n ${seg_bot[i]} ]]&&part+=' '; part+=${seg_bot[i]}; wrap_link "${seg_link[i]}" "$part"; out+=${out:+$sep}$LNK; done; row1=$out row2=; }
 assemble_stacked() {
   local i t b wt wb w pad r1= r2=
   for i in "${!seg_top[@]}"; do
     t=${seg_top[i]} b=${seg_bot[i]}; cells "$t"; wt=$N; cells "$b"; wb=$N; w=$((wt>wb?wt:wb))
-    printf -v pad '%*s' $((w-wt)) ''; r1+=${r1:+$sep}$t$pad
-    printf -v pad '%*s' $((w-wb)) ''; r2+=${r2:+$sep}$b$pad
+    # Padding stays outside the link.
+    wrap_link "${seg_link[i]}" "$t"; printf -v pad '%*s' $((w-wt)) ''; r1+=${r1:+$sep}$LNK$pad
+    wrap_link "${seg_link[i]}" "$b"; printf -v pad '%*s' $((w-wb)) ''; r2+=${r2:+$sep}$LNK$pad
   done
   # Claude Code trims leading whitespace per row; pad row starts with U+2800 (renders blank, counts one cell).
   local lead; lead=${r1%%[! ]*}; r1=${lead// /⠀}${r1:${#lead}}; lead=${r2%%[! ]*}; r2=${lead// /⠀}${r2:${#lead}}
@@ -282,8 +339,6 @@ try_layouts() { build; assemble_flat; fits&&return 0; if ((fit_rows>=2)); then a
 pad_rows() { cells "$row1"; ((N<budget))&&printf -v _p '%*s' $((budget-N)) ''&&row1+=$_p; if [[ -n $row2 ]]; then cells "$row2"; ((N<budget))&&printf -v _p '%*s' $((budget-N)) ''&&row2+=$_p; fi; }
 
 if ! [[ ${COLUMNS:-} =~ ^[0-9]+$ ]] || ((COLUMNS<=0)); then build; assemble_flat; emit; fi
-# shellcheck source=../config/constants.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/config/constants.sh"
 budget=$((COLUMNS-STATUS_LINE_AREA_HORIZONTAL_MARGIN_CELLS-fit_reserve)); ((budget<1))&&budget=1
 # Stage 1: full bars.
 try_layouts&&emit

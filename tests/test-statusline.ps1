@@ -30,6 +30,8 @@ function Invoke-Renderer([string[]]$argv = @(), [string]$stdin = $payload, [hash
     $psi.Environment['CLAUDE_CONFIG_DIR'] = $ConfigDir; $psi.Environment['XDG_CACHE_HOME'] = $CacheDir
     $psi.Environment['CLAUDE_STATUSLINE_DISABLE_WATCH'] = '1'; $psi.Environment['CLAUDE_STATUSLINE_DISABLE_REFRESH'] = '1'
     $psi.Environment['NO_COLOR'] = '1'; $psi.Environment.Remove('COLUMNS') | Out-Null
+    # Pinned "now" for the reset-time countdown (B-spec payload fixtures).
+    $psi.Environment['CLAUDE_STATUSLINE_NOW'] = '1794427200'
     foreach ($k in $extraEnv.Keys) { if ($null -eq $extraEnv[$k]) { $psi.Environment.Remove($k) | Out-Null } else { $psi.Environment[$k] = [string]$extraEnv[$k] } }
     $psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
     $psi.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
@@ -39,9 +41,11 @@ function Invoke-Renderer([string[]]$argv = @(), [string]$stdin = $payload, [hash
     return (($out -split "`r?`n") | Where-Object { $_ -ne '' }) -join "`n"
 }
 function Render([int]$cols) { Invoke-Renderer -extraEnv @{ COLUMNS = $cols } }
+# Strip SGR and OSC 8 hyperlink sequences: what the terminal actually draws.
+function Strip([string]$s) { ($s -replace "$([char]27)\[[0-9;]*m", '') -replace $ANSI_OSC8_HYPERLINK_SEQUENCE_ESC_RIGHT_BRACKET_8_PARAMS_URI_TERMINATED_BY_ST_OR_BEL, '' }
 function Get-Cells([string]$s) {
     $n = 0
-    foreach ($ch in $s.ToCharArray()) { $cp = [int]$ch; $n += (($cp -ge 0x2E80 -and $cp -le 0xA4CF) -or ($cp -ge 0xAC00 -and $cp -le 0xD7A3) -or ($cp -ge 0xFF00 -and $cp -le 0xFF60)) ? 2 : 1 }
+    foreach ($ch in (Strip $s).ToCharArray()) { $cp = [int]$ch; $n += (($cp -ge 0x2E80 -and $cp -le 0xA4CF) -or ($cp -ge 0xAC00 -and $cp -le 0xD7A3) -or ($cp -ge 0xFF00 -and $cp -le 0xFF60)) ? 2 : 1 }
     return $n
 }
 function Get-Rows([string]$s) { @($s -split "`n") }
@@ -55,7 +59,7 @@ function Get-Bracket([string]$s, [string]$after) { $i = $s.IndexOf($after); if (
 try {
     Set-Config '{"segments":["five_hour","fable","seven_day"],"labels":{"five_hour":"five","fable":"story","seven_day":"week"},"widths":{"five_hour":3,"fable":5,"seven_day":4}}'
     [IO.File]::WriteAllText($Fable, '{"used_percentage":42,"resets_at":"2026-09-21T00:00:00Z","model":"Fable","fetched_at":' + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + '}')
-    $script:payload = '{"model":{"display_name":"Claude"},"context_window":{"used_percentage":25,"total_input_tokens":1000,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":20},"seven_day":{"used_percentage":30}}}'
+    $script:payload = '{"model":{"display_name":"Claude"},"context_window":{"used_percentage":25,"total_input_tokens":1000,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":20,"resets_at":1794435180},"seven_day":{"used_percentage":30,"resets_at":1794794400}}}'
     $plain = Invoke-Renderer
 
     if ($plain -notlike '*five `[*') { Fail 'missing custom five-hour label' }
@@ -133,26 +137,104 @@ try {
     # Negatives on the rest of the schema: each rejects the whole file (PASS = defaults render, custom label absent).
     foreach ($badCfg in '{"segments":["model","model"],"labels":{"five_hour":"custom"}}', '{"segments":["nope"],"labels":{"five_hour":"custom"}}',
                         '{"labels":{"five_hour":7}}', '{"widths":{"fable":0},"labels":{"five_hour":"custom"}}', '{"widths":{"fable":2.5},"labels":{"five_hour":"custom"}}',
-                        '{"fable":{"refresh_seconds":10},"labels":{"five_hour":"custom"}}') {
+                        '{"fable":{"refresh_seconds":10},"labels":{"five_hour":"custom"}}',
+                        '{"resets":"yes","labels":{"five_hour":"custom"}}', '{"resets":1,"labels":{"five_hour":"custom"}}',
+                        '{"resets_format":"Clock","labels":{"five_hour":"custom"}}', '{"resets_format":"relative","labels":{"five_hour":"custom"}}',
+                        '{"resets_format":["clock"],"labels":{"five_hour":"custom"}}', '{"fit":{"ladder":["Resets"]},"labels":{"five_hour":"custom"}}') {
         Set-Config $badCfg
         $o = Render 400
         if ($o -like '*custom*' -or $o -notlike '*Claude*ctx*5h*') { Fail "invalid config accepted: $badCfg -> $o" }
     }
+    # Positive control for the negatives above: the valid forms of the same keys keep the config.
+    Set-Config '{"resets":true,"resets_format":"countdown","fit":{"ladder":["resets"]},"labels":{"five_hour":"custom"}}'
+    if ((Render 400) -notlike '*custom*') { Fail 'valid resets config rejected' }
+
+    # ---- reset times on the 5h/7d slots: formats, glyph, placement. Two slots only, 400 columns (flat, unfitted). ----
+    function Pay($five, $seven) {
+        $f = if ($null -ne $five) { ",`"resets_at`":$five" } else { '' }; $s = if ($null -ne $seven) { ",`"resets_at`":$seven" } else { '' }
+        '{"rate_limits":{"five_hour":{"used_percentage":20' + $f + '},"seven_day":{"used_percentage":30' + $s + '}}}'
+    }
+    function Rr([string]$extra, [string]$pay, [int]$cols = 400, [hashtable]$envx = @{}) {
+        Set-Config ('{"segments":["five_hour","seven_day"]' + ($extra ? ",$extra" : '') + '}')
+        $e = @{ COLUMNS = $cols }; foreach ($k in $envx.Keys) { $e[$k] = $envx[$k] }
+        Invoke-Renderer -stdin $pay -extraEnv $e
+    }
+    function Want([string]$label, [string]$got, [string]$want) { if ($got -cne $want) { Fail "resets ${label}: got [$got] want [$want]" } }
+    # .NET ignores TZ, so clock expectations come from the same local-time calls, computed independently here.
+    $ic = [Globalization.CultureInfo]::InvariantCulture
+    function Clock([long]$at, [string]$slot) {
+        $t = [DateTimeOffset]::FromUnixTimeSeconds([long]([math]::Ceiling($at / 60.0) * 60)).ToLocalTime()
+        if ($slot -eq '5h') { return '↻' + $t.ToString('HH:mm', $ic) }
+        return '↻' + $WEEKDAY_CODES_SUNDAY_FIRST_SU_M_T_W_R_F_SA[[int]$t.DayOfWeek] + $t.ToString('HH', $ic)
+    }
+    $B5 = '5h [██░░░░░░░░░░] (20%)'; $B7 = '7d [████░░░░░░░░] (30%)'; $cd = '"resets_format":"countdown"'
+    $fix = Pay 1794435180 1794794400
+    Want 'countdown' (Rr $cd $fix) "$B5 ↻2h13m ⊟◂ ● $B7 ↻4d6h ⊟◂"
+    $clockLine = "$B5 $(Clock 1794435180 '5h') ⊟◂ ● $B7 $(Clock 1794794400 '7d') ⊟◂"
+    Want 'clock' (Rr '' $fix) $clockLine
+    Want 'clock-explicit' (Rr '"resets":true,"resets_format":"clock"' $fix) $clockLine
+    # Day codes: 7 consecutive LOCAL dates at 12:00 from Sunday 2026-11-15, so the weekday is the same in every zone
+    # (and no DST edge is near); literal codes, not the renderer's constant.
+    function LocalEpoch([int]$day, [int]$h, [int]$m, [int]$s) { ([DateTimeOffset][datetime]::new(2026, 11, $day, $h, $m, $s, [DateTimeKind]::Local)).ToUnixTimeSeconds() }
+    $codes = @('SU', 'M', 'T', 'W', 'R', 'F', 'SA')
+    for ($k = 0; $k -le 6; $k++) { Want "day $k" (Rr '' (Pay $null (LocalEpoch (15 + $k) 12 0 0))) "$B5 ⊟◂ ● $B7 ↻$($codes[$k])12 ⊟◂" }
+    # Round-up: local 13:59:59 reaches 14:00 and Saturday 23:59:59 reaches Sunday 00; an exact minute stays.
+    Want 'roundup' (Rr '' (Pay (LocalEpoch 15 13 59 59) (LocalEpoch 21 23 59 59))) "$B5 ↻14:00 ⊟◂ ● $B7 ↻SU00 ⊟◂"
+    Want 'exact' (Rr '' (Pay (LocalEpoch 15 13 59 0) $null)) "$B5 ↻13:59 ⊟◂ ● $B7 ⊟◂"
+    # Countdown minutes, a sub-minute remainder rounding up, and a reset already past.
+    Want 'minutes' (Rr $cd (Pay 1794427500 1794427261)) "$B5 ↻5m ⊟◂ ● $B7 ↻2m ⊟◂"
+    # Countdown thresholds: 59m stays minutes, 60m turns into hours, 1439m stays hours, 1440m turns into days.
+    Want 'bounds-hour' (Rr $cd (Pay 1794430740 1794430800)) "$B5 ↻59m ⊟◂ ● $B7 ↻1h0m ⊟◂"
+    Want 'bounds-day' (Rr $cd (Pay 1794513540 1794513600)) "$B5 ↻23h59m ⊟◂ ● $B7 ↻1d0h ⊟◂"
+    # Out of range (a millisecond epoch, 1e300, negative): no reset text, each slot on its own, both formats.
+    foreach ($x in '', $cd) {
+        Want "out-of-range [$x]" (Rr $x (Pay '1794435180000' '1e300')) "$B5 ⊟◂ ● $B7 ⊟◂"
+        Want "out-of-range-one [$x]" (Rr $x (Pay '-60' '1794794400')) "$B5 ⊟◂ ● $B7 $(if ($x) { '↻4d6h' } else { Clock 1794794400 '7d' }) ⊟◂"
+    }
+    Want 'past' (Rr $cd (Pay 1794426600 $null)) "$B5 ↻0m ⊟◂ ● $B7 ⊟◂"
+    Want 'off' (Rr '"resets":false' $fix) "$B5 ⊞◂ ● $B7 ⊞◂"
+    Want 'off-countdown' (Rr '"resets":false,"resets_format":"countdown"' $fix) "$B5 ⊞◂ ● $B7 ⊞◂"
+    # Absent 5h reset time: glyph only on 5h, 7d intact. Absent 5h window: the 7d slot alone, still correct.
+    Want 'no-five-reset' (Rr $cd (Pay $null 1794794400)) "$B5 ⊟◂ ● $B7 ↻4d6h ⊟◂"
+    Want 'no-five-window' (Rr $cd '{"rate_limits":{"seven_day":{"used_percentage":30,"resets_at":1794794400}}}') "$B7 ↻4d6h ⊟◂"
+    Want 'non-number' (Rr $cd '{"rate_limits":{"five_hour":{"used_percentage":20,"resets_at":"soon"},"seven_day":{"used_percentage":30,"resets_at":null}}}') "$B5 ⊟◂ ● $B7 ⊟◂"
+    # Stacked: reset text and glyph sit on the values row only; every separator column lines up.
+    $stk2 = Rr "$cd,`"fit`":{`"rows`":2}" $fix (37 + $margin)
+    if ((Get-Rows $stk2).Count -ne 2) { Fail "resets stacked: expected 2 rows: $stk2" }
+    $s1, $s2 = Get-Rows $stk2
+    if ($s1 -match '[↻⊟]' -or $s2 -notlike '*(20%) ↻2h13m ⊟◂*(30%) ↻4d6h ⊟◂*') { Fail "resets stacked rows wrong:`n$stk2" }
+    function Seps([string]$s) { (@(for ($i = 0; $i -lt $s.Length; $i++) { if ($s[$i] -eq '●') { $i } }) -join ' ') }
+    if (-not (Seps $s1) -or (Seps $s1) -ne (Seps $s2)) { Fail "resets stacked separators misaligned: [$(Seps $s1)] [$(Seps $s2)]" }
+    # Colour: the reset text and glyph carry the value colour (SGR 38;5;243).
+    Set-Config ('{"segments":["model","five_hour","seven_day"],' + $cd + '}')
+    $col = Invoke-Renderer -stdin $fix -extraEnv @{ COLUMNS = 400; NO_COLOR = $null }
+    $V = "$([char]27)[38;5;243m"; $Z = "$([char]27)[0m"
+    if (-not $col.Contains("$V↻2h13m ⊟◂$Z") -or -not $col.Contains("$V↻4d6h ⊟◂$Z")) { Fail "resets colour: value SGR missing: $($col -replace [char]27, '\e')" }
+    # The whole coloured line, byte for byte; the sh twin asserts the same literal (model colour, bar gradient, SGR order).
+    $E = [char]27
+    Want 'colour-line' ($col -replace [char]27, '\e') ("${E}[1;38;5;75mClaude${E}[0m${E}[38;5;237m ● ${E}[0m${E}[38;5;240m5h${E}[0m [${E}[38;2;40;170;60m█${E}[38;2;68;169;51m█${E}[38;5;59m░░░░░░░░░░${E}[0m] (${E}[38;2;112;166;36m20%${E}[0m) ${E}[38;5;243m↻2h13m ⊟◂${E}[0m${E}[38;5;237m ● ${E}[0m${E}[38;5;240m7d${E}[0m [${E}[38;2;40;170;60m█${E}[38;2;68;169;51m█${E}[38;2;97;167;41m█${E}[38;2;130;165;30m█${E}[38;5;59m░░░░░░░░${E}[0m] (${E}[38;2;148;164;24m30%${E}[0m) ${E}[38;5;243m↻4d6h ⊟◂${E}[0m" -replace [char]27, '\e')
 
     # ---- exclusion ladder map. Segments pinned (no /tmp) so every machine renders the same stages. ----
-    $order = @('disk_label', 'ctx_int', 'no_parens', 'disk_int', 'ctx_no_total', 'no_free', 'fable_short', 'disk_value', 'ctx_no_used', 'fable_label', 'fable_segment', 'seven_label', 'five_label', 'ctx_label', 'seven_segment', 'five_segment')
-    $pin = '"segments":["model","cwd","context","disk","five_hour","seven_day","fable"]'
+    $order = @('resets', 'disk_label','ctx_int', 'no_parens', 'disk_int', 'ctx_no_total', 'no_free', 'fable_short', 'disk_value', 'ctx_no_used', 'fable_label', 'fable_segment', 'seven_label', 'five_label', 'ctx_label', 'seven_segment', 'five_segment')
+    # Countdown keeps the reset text independent of the machine's time zone.
+    $pin = '"segments":["model","cwd","context","disk","five_hour","seven_day","fable"],"resets_format":"countdown"'
     function Floor([string[]]$steps) { Set-Config ('{' + $pin + ',"fit":{"rows":1,"ladder":[' + (($steps | ForEach-Object { "`"$_`"" }) -join ',') + ']}}'); return (Render 10) }
     # The disk segment is always the 4th in the pinned order; mask its number so a free-space change between two renders
     # does not fail a comparison. ponytail: a digit-count change (9.9G -> 10.0G) mid-run still shifts the widths by one.
-    function Mask-Disk([string]$s) { $seg = $s -split ' ● '; if ($seg.Count -ge 4) { $seg[3] = $seg[3] -replace $DISK_SEGMENT_NUMBER_INTEGER_WITH_OPTIONAL_ONE_DECIMAL, 'N' }; return ($seg -join ' ● ') }
+    # Per row, split on the bare separator dot: a stacked values row can open with U+2800 blanks directly before its
+    # first dot (no space), so ' ● ' would shift the fields; '●' keeps column 4 the disk on both rows. The disk bar's
+    # fill is masked as well, since a free-space change can move its percentage.
+    function Mask-Disk([string]$s) {
+        (@($s -split "`n" | ForEach-Object { $seg = $_ -split '●'; if ($seg.Count -ge 4) { $seg[3] = $seg[3] -replace $DISK_SEGMENT_NUMBER_INTEGER_WITH_OPTIONAL_ONE_DECIMAL, 'N' -replace '[█░]+', 'B' }; $seg -join '●' }) -join "`n")
+    }
     $base = Floor @()
     $m = [regex]::Match($base, $DISK_FREE_ONE_DECIMAL_THEN_UNIT_THEN_SPACE_FREE)
     if (-not $m.Success) { Fail "baseline lost the disk value: $base" }
     $diskTok = "$($m.Groups[1].Value)$($m.Groups[2].Value)"
     # Each step on its own: exactly its declared change to the bars-off baseline, nothing else.
     $expect = [ordered]@{
-        disk_label    = $base.Replace('disk ', '')
+        resets        = $base.Replace(' ↻2h13m ⊟◂', '').Replace(' ↻4d6h ⊟◂', '')
+        disk_label   = $base.Replace('disk ', '')
         ctx_int       = $base.Replace('/195.3K', '/195K')
         no_parens     = $base.Replace('(', '').Replace(')', '')
         ctx_no_total  = $base.Replace('/195.3K', '')
@@ -165,8 +247,8 @@ try {
         seven_label   = $base.Replace('7d (', '(')
         five_label    = $base.Replace('5h (', '(')
         ctx_label     = $base.Replace('ctx 1000B', '1000B')
-        seven_segment = $base.Replace(' ● 7d (30%)', '')
-        five_segment  = $base.Replace(' ● 5h (20%)', '')
+        seven_segment = $base.Replace(' ● 7d (30%) ↻4d6h ⊟◂', '')
+        five_segment  = $base.Replace(' ● 5h (20%) ↻2h13m ⊟◂', '')
     }
     foreach ($s in $expect.Keys) {
         if ($expect[$s] -eq $base) { Fail "ladder ${s}: expectation is a no-op on baseline: $base" }
@@ -194,6 +276,79 @@ try {
         }
     }
     Set-Config '{bad json'
+
+    # No URL-handler marker under $ConfigDir, so the coloured line asserted earlier carries no link.
+    if ($col.Contains("$E]8")) { Fail 'link without URL-handler marker' }
+
+    # ---- Ctrl+click: OSC 8 links over the whole 5h and 7d slots. Colour on, outside tmux and WSL, marker present. ----
+    $O = "$E]8;"; $ST = "$E\"; $C = "$O;$ST"
+    function LCfg([string]$dir, [string]$json) { New-Item -ItemType Directory -Force $dir | Out-Null; [IO.File]::WriteAllText((Join-Path $dir 'statusline.json'), $json) }
+    function Mark([string]$dir) { New-Item -ItemType Directory -Force (Join-Path $dir 'claude-statusline') | Out-Null; [IO.File]::WriteAllText((Join-Path $dir 'claude-statusline/url-handler'), '') }
+    function Lr([string]$dir, [int]$cols, [hashtable]$envx = @{}) {
+        $e = @{ CLAUDE_CONFIG_DIR = $dir; COLUMNS = $cols; NO_COLOR = $null; TMUX = $null; WSL_DISTRO_NAME = $null }
+        foreach ($k in $envx.Keys) { $e[$k] = $envx[$k] }
+        Invoke-Renderer -extraEnv $e
+    }
+    function NLinks([string]$s) { ([regex]::Matches($s, [regex]::Escape("${O}id="))).Count }
+    $lhome = Join-Path $HomeDir '.claude-t'; $dhome = Join-Path $HomeDir '.claude'; Mark $lhome; Mark $dhome
+    $flatCfg = '{' + $cd + ',"segments":["model","five_hour","seven_day","fable"]}'
+    LCfg $lhome $flatCfg; LCfg $dhome $flatCfg
+    $O5 = "${O}id=bsl-5h;claude-statusline://toggle?slot=5h&profile=t$ST"; $O7 = "${O}id=bsl-7d;claude-statusline://toggle?slot=7d&profile=t$ST"
+    # Flat: the link opens before the label and closes after the glyph, before the separator.
+    $lk = Lr $lhome 400
+    $want = [regex]::Escape("$O5$E[38;5;240m5h") + '.*' + [regex]::Escape("⊟◂$E[0m$C$E[38;5;237m ● $E[0m$O7$E[38;5;240m7d") + '.*' + [regex]::Escape("⊟◂$E[0m$C$E[38;5;237m ● ")
+    if ($lk -notmatch $want) { Fail "link flat: $($lk -replace [char]27, '\e')" }
+    if ((NLinks $lk) -ne 2) { Fail "link flat: want 2 links, got $(NLinks $lk)" }
+    # Default config dir ~/.claude: no profile parameter.
+    $dl = Lr $dhome 400
+    if (-not $dl.Contains("${O}id=bsl-5h;claude-statusline://toggle?slot=5h$ST") -or -not $dl.Contains("${O}id=bsl-7d;claude-statusline://toggle?slot=7d$ST") -or $dl.Contains('profile=')) { Fail "link default dir: $($dl -replace [char]27, '\e')" }
+    # Stacked: each row links both slots under the same id; padding stays outside the link; separators still align.
+    LCfg $lhome ('{' + $cd + ',"segments":["five_hour","seven_day"],"fit":{"rows":2}}')
+    $ls2 = Lr $lhome (37 + $margin)
+    if ((Get-Rows $ls2).Count -ne 2) { Fail "link stacked: expected 2 rows: $($ls2 -replace [char]27, '\e')" }
+    $l1, $l2 = Get-Rows $ls2
+    foreach ($r in $l1, $l2) {
+        if ($r -notmatch ([regex]::Escape($O5) + '.*' + [regex]::Escape($C) + '.*' + [regex]::Escape($O7) + '.*' + [regex]::Escape($C)) -or (NLinks $r) -ne 2 -or $r.Contains(" $C")) { Fail "link stacked row: $($r -replace [char]27, '\e')" }
+    }
+    if (-not $l2.Contains("$C ")) { Fail "link stacked: no padding after a link: $($l2 -replace [char]27, '\e')" }
+    if (-not (Seps (Strip $l1)) -or (Seps (Strip $l1)) -ne (Seps (Strip $l2))) { Fail 'link stacked separators misaligned' }
+    # Fit regression: at every stage the linked render draws exactly what the unlinked one (TMUX) draws.
+    LCfg $lhome ('{' + $cd + ',"segments":["model","cwd","context","disk","five_hour","seven_day","fable"],"fit":{"rows":2}}')
+    $wf = Get-Cells (Lr $lhome 400 @{ TMUX = '1' })
+    # Mask self-check on real renders, flat (400) and stacked (110, disk value on the values row; with and without colour,
+    # since NO_COLOR merges the first separator's space into the row's U+2800 lead): changing only the free-space number
+    # and the disk bar's fill masks equal; changing the 5h value does not.
+    foreach ($spec in @{ c = 400; e = @{ TMUX = '1' } }, @{ c = 110; e = @{ TMUX = '1' } }, @{ c = 110; e = @{ TMUX = '1'; NO_COLOR = '1' } }) {
+        $cols = $spec.c; $dr = Strip (Lr $lhome $cols $spec.e)
+        $dm = [regex]::Match($dr, $DISK_FREE_ONE_DECIMAL_THEN_UNIT_THEN_SPACE_FREE)
+        if (-not $dm.Success) { Fail "mask self-check ${cols}: no disk value: $dr" }
+        $dv = $dm.Groups[1].Value; $du = $dm.Groups[2].Value; $dw = $dv.Substring(0, $dv.Length - 1) + (([int][string]$dv[-1] + 1) % 10)
+        if ($cols -ne 400 -and ((Get-Rows $dr).Count -ne 2 -or -not (Get-Rows $dr)[1].Contains("$($dv)$($du) free"))) { Fail "mask self-check ${cols}: not stacked with disk on the values row: $dr" }
+        $dmut = ([regex]'disk \[█').Replace($dr.Replace("$($dv)$($du) free", "$($dw)$($du) free"), 'disk [░', 1)
+        if ($dmut -ceq $dr -or -not $dr.Contains('(20%)')) { Fail "mask self-check ${cols}: mutation did not apply" }
+        if ((Mask-Disk $dr) -cne (Mask-Disk $dmut)) { Fail "mask self-check ${cols}: free-space change not masked:`n$(Mask-Disk $dr)`n$(Mask-Disk $dmut)" }
+        if ((Mask-Disk $dr) -ceq (Mask-Disk $dr.Replace('(20%)', '(21%)'))) { Fail "mask self-check ${cols}: masked the 5h value" }
+    }
+    $saw = ''
+    foreach ($cols in 400, ($wf + $margin), ($wf - 6 + $margin), 110, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10) {
+        $a = Lr $lhome $cols; $b = Lr $lhome $cols @{ TMUX = '1' }
+        # Controls: a drawn 5h (20%) or 7d (30%) slot carries its link; the unlinked render has none.
+        if (((Strip $a) -match '[23]0%' -and -not $a.Contains("${O}id=bsl-")) -or $b.Contains("$E]8")) { Fail "link fit ${cols}: linked/unlinked control failed" }
+        if ((Mask-Disk (Strip $a)) -cne (Mask-Disk (Strip $b))) { Fail "link fit ${cols}: drawn text differs:`n$(Strip $a)`n$(Strip $b)" }
+        $sb = Strip $b
+        $saw += if ($cols -eq 400) { 'W' } elseif ($sb.Contains('[') -and (Get-Rows $sb).Count -eq 2 -and -not $sb.Contains('(')) { 'L' } elseif ($sb.Contains('[')) { 'S' } else { 'B' }
+    }
+    if ($saw -notlike 'W*S*L*B') { Fail "link fit: stages not all covered (W wide, S shrink, L ladder, B bars off/floor): $saw" }
+    # Negatives: each condition alone removes every link (PASS = a normal render with no OSC 8 at all).
+    LCfg $lhome $flatCfg
+    function NoLink([string]$label, [string]$o) { if ($o -notlike '*5h*7d*' -or $o.Contains("$E]8")) { Fail "link negative ${label}: $($o -replace [char]27, '\e')" } }
+    foreach ($v in 'TMUX', 'WSL_DISTRO_NAME', 'NO_COLOR') { NoLink $v (Lr $lhome 400 @{ $v = '1' }) }
+    $nomark = Join-Path $HomeDir '.claude-nomark'; LCfg $nomark $flatCfg; NoLink 'marker-absent' (Lr $nomark 400)
+    foreach ($d in (Join-Path $Tmp 'x'), (Join-Path $HomeDir '.claude-bad/name'), (Join-Path $HomeDir '.claude-b@d'), (Join-Path $HomeDir 'claude-t')) { Mark $d; LCfg $d $flatCfg; NoLink "dir $d" (Lr $d 400) }
+    # The five_segment ladder step drops the whole 5h slot, link included.
+    LCfg $lhome ('{' + $cd + ',"segments":["five_hour","seven_day"],"fit":{"rows":1,"ladder":["five_segment"]}}')
+    $l5 = Lr $lhome 10
+    if ($l5.Contains('bsl-5h') -or $l5 -notmatch ([regex]::Escape($O7) + '.*7d.*' + [regex]::Escape($C)) -or (NLinks $l5) -ne 1 -or ([regex]::Matches($l5, [regex]::Escape($C))).Count -ne 1) { Fail "link five_segment: $($l5 -replace [char]27, '\e')" }
 
     if ((Invoke-Renderer -argv @('-Help')) -notlike 'Usage:*') { Fail 'usage' }
 
@@ -223,6 +378,11 @@ try {
     if ($c.used_percentage -ne 73 -or $c.resets_at -ne 'later-percent') { Fail "fable refresh (percent): $($c | ConvertTo-Json -Compress)" }
     $c = Refresh-With '{"fable":{"used_percentage":55,"resets_at":"later"}}'
     if ($c.used_percentage -ne 55 -or $c.resets_at -ne 'later') { Fail "fable refresh (fable object): $($c | ConvertTo-Json -Compress)" }
+    # PS7 turns ISO-8601 strings into DateTime; the cache must still hold the API's string verbatim (as the sh twin does).
+    foreach ($iso in '2026-11-15T13:59:59Z', '2026-11-15T20:59:59.567363+00:00') {
+        $c = Refresh-With ('{"limits":[{"kind":"weekly_scoped","scope":{"model":{"display_name":"Fable"}},"used_percentage":61,"resets_at":"' + $iso + '"}]}')
+        if ($c.resets_at -cne $iso) { Fail "fable refresh (ISO resets_at): want [$iso] got [$($c.resets_at)]" }
+    }
     $listener.Stop()
 
     $c['fetched_at'] = 1; ($c | ConvertTo-Json -Compress) | Set-Content -LiteralPath $Fable
