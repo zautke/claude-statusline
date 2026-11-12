@@ -121,6 +121,24 @@ try {
         Reset-Reg
     }
 
+    # ---- 2b. statusLine is merged: a re-install keeps refreshInterval (countdown) and user keys such as padding ----
+    $cfg = Join-Path $temp 'merge'
+    Write-Text (Join-Path $cfg 'settings.json') '{"statusLine":{"type":"command","command":"bash ~/.claude/claude-statusline/scripts/statusline-launch.sh # bsl-cols=9","refreshInterval":60,"padding":2}}'
+    $r = Inst @('-c', $cfg, '-W')
+    $j = Json (Join-Path $cfg 'settings.json')
+    if ($r.Rc -ne 0 -or $j.statusLine.refreshInterval -ne 60 -or $j.statusLine.padding -ne 2 -or $j.statusLine.type -cne 'command' -or $j.statusLine.command -notmatch 'statusline-launch\.ps1"$') { Fail "statusLine not merged: $(Canon $j)" }
+    Reset-Reg
+
+    # ---- 2c. Negative: a settings.json held open (an editor, Claude Code) fails the install loudly, leaving no temp file ----
+    $cfg = Join-Path $temp 'held'
+    Write-Text (Join-Path $cfg 'settings.json') '{"model":"opus"}'
+    $held = [IO.File]::Open((Join-Path $cfg 'settings.json'), 'Open', 'Read', 'Read')
+    try { $r = Inst @('-c', $cfg, '-W') } finally { $held.Dispose() }
+    if ($r.Rc -eq 0 -or $r.Out -match 'Installed' -or $r.Err -notmatch 'install\.ps1') { Fail "held settings.json: rc=$($r.Rc) out=$($r.Out) err=$($r.Err)" }
+    if (Get-ChildItem -LiteralPath $cfg -Force -Filter '.settings.json.*') { Fail 'held settings.json: temp file left behind' }
+    if ((Read-Text (Join-Path $cfg 'settings.json')) -cne '{"model":"opus"}') { Fail 'held settings.json changed' }
+    Reset-Reg
+
     # ---- 3. Keybinding merge ----
     $cfg = Join-Path $temp 'kb'
     $kb = Join-Path $cfg 'keybindings.json'
@@ -189,6 +207,20 @@ try {
     $null = Inst @('-c', $cfgB, '-W', '--uninstall')
     if (Test-Path -LiteralPath $regKey) { Fail 'uninstall left our own handler' }
     if (Test-Path -LiteralPath (Join-Path $cfgB 'keybindings.json')) { Fail 'uninstall left the keybindings.json it created' }
+    Reset-Reg
+
+    # Several profiles under HOME: uninstalling the one that holds the handler moves it to another profile that still
+    # draws links (has the marker), keeping the WT entry; the last uninstall removes both.
+    $pa = Join-Path $env:USERPROFILE '.claude-m2a'; $pb = Join-Path $env:USERPROFILE '.claude-m2b'
+    Write-Text $wt $wtList
+    $null = Inst @('-c', $pb); $null = Inst @('-c', $pa)
+    if ((Reg-Cmd) -cne (Expect-Cmd $pa)) { Fail 'multi-profile: second install did not take the handler' }
+    $r = Inst @('-c', $pa, '-U')
+    if ($r.Rc -ne 0 -or (Reg-Cmd) -cne (Expect-Cmd $pb)) { Fail "multi-profile: handler not moved to the other profile: rc=$($r.Rc) cmd=$(Reg-Cmd)" }
+    if (-not (Read-Text $wt).Contains("`"$scheme`"")) { Fail 'multi-profile: WT entry removed while the handler moved' }
+    $null = Inst @('-c', $pb, '-U')
+    if (Test-Path -LiteralPath $regKey) { Fail 'multi-profile: last uninstall left the handler' }
+    if ((Read-Text $wt) -cne $wtList) { Fail "multi-profile: WT not restored`n$(Read-Text $wt)" }
     Reset-Reg
 
     # Negative: a foreign handler is kept, warned about, and no marker is written.

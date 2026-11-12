@@ -98,6 +98,12 @@ inst -c "$cfg" || fail "symlink install: $err"
 [[ -L $cfg/settings.json ]] || fail 'settings.json symlink replaced by a file'
 jq -e '.model=="opus" and (.statusLine.command | test("statusline-launch\\.sh"))' "$temp/dotfiles/settings.json" >/dev/null || fail 'symlink target not written'
 
+# ---- 2b. statusLine is merged: a re-install keeps refreshInterval (countdown) and user keys such as padding ----
+cfg=$temp/merge; mkdir -p "$cfg"
+printf '%s' '{"statusLine":{"type":"command","command":"bash ~/.claude/claude-statusline/scripts/statusline-launch.sh # bsl-cols=9","refreshInterval":60,"padding":2}}' >"$cfg/settings.json"
+inst -c "$cfg" || fail "merge install: $err"
+jq -e '.statusLine.refreshInterval==60 and .statusLine.padding==2 and .statusLine.type=="command" and (.statusLine.command | test("statusline-launch\\.sh$"))' "$cfg/settings.json" >/dev/null || fail "statusLine not merged: $(cat "$cfg/settings.json")"
+
 # ---- 3. Keybinding merge ----
 cfg=$temp/kb; kb=$cfg/keybindings.json
 inst -c "$cfg" || fail "kb install: $err"
@@ -136,14 +142,38 @@ inst -c "$cfg" || fail "linux url install: $err"
 grep -qxF "Exec=bash \"$launcher\" --url %u" "$desktop" && grep -qxF "MimeType=x-scheme-handler/$URL_SCHEME;" "$desktop" && grep -qxF 'NoDisplay=true' "$desktop" || fail "desktop file: $(cat "$desktop")"
 grep -qxF "default $URL_SCHEME-toggle.desktop x-scheme-handler/$URL_SCHEME" "$temp/xdg-mime.log" || fail 'xdg-mime default not called'
 [[ -f $marker ]] || fail 'linux marker not written'
-# Another profile takes the handler; uninstalling this profile leaves it.
+# Another profile takes the handler; uninstalling this profile leaves it, and the mimeapps.list default with it.
+# (The xdg-mime stub only logs, so the test writes the line xdg-mime default would have written.)
+mime=$XDG_CONFIG_HOME/mimeapps.list mime_line=x-scheme-handler/$URL_SCHEME=$URL_SCHEME-toggle.desktop
+mkdir -p "$XDG_CONFIG_HOME"; printf '[Default Applications]\n%s\ntext/html=firefox.desktop\n' "$mime_line" >"$mime"
 cfgb=$temp/url-b
 inst -c "$cfgb"; inst -c "$cfg" -U
 [[ -f $desktop ]] && grep -qF "$cfgb/" "$desktop" || fail 'uninstall removed another profile''s handler'
+grep -qxF "$mime_line" "$mime" || fail 'uninstall removed the mimeapps.list default of another profile''s handler'
 [[ ! -e $marker ]] || fail 'uninstall left this profile''s marker'
 inst -c "$cfgb" --uninstall
 [[ ! -e $desktop ]] || fail 'uninstall left our own .desktop'
+[[ $(cat "$mime") == $'[Default Applications]\ntext/html=firefox.desktop' ]] || fail "uninstall left the mimeapps.list default: $(cat "$mime")"
 [[ ! -e $cfgb/keybindings.json ]] || fail 'uninstall left the keybindings.json it created'
+
+# Several profiles under HOME: uninstalling the one that holds the handler moves it to another profile that still
+# draws links (has the marker); the last uninstall removes it.
+pa=$HOME/.claude-m2a pb=$HOME/.claude-m2b
+printf '[Default Applications]\n%s\n' "$mime_line" >"$mime"
+inst -c "$pb"; inst -c "$pa"
+grep -qF "$pa/" "$desktop" || fail 'multi-profile: second install did not take the handler'
+inst -c "$pa" -U || fail "multi-profile uninstall: $err"
+grep -qxF "Exec=bash \"$pb/$LAUNCHER_HOME/scripts/statusline-launch.sh\" --url %u" "$desktop" || fail "multi-profile: handler not moved: $(cat "$desktop")"
+grep -qxF "$mime_line" "$mime" || fail 'multi-profile: mimeapps.list default removed while the handler moved'
+inst -c "$pb" -U
+[[ ! -e $desktop ]] && ! grep -qF "$mime_line" "$mime" || fail 'multi-profile: last uninstall left the handler'
+CLAUDE_STATUSLINE_UNAME=Darwin inst -c "$pb"; CLAUDE_STATUSLINE_UNAME=Darwin inst -c "$pa"
+CLAUDE_STATUSLINE_UNAME=Darwin inst -c "$pa" -U || fail "multi-profile mac uninstall: $err"
+app=$HOME/Applications/$URL_SCHEME-toggle.app
+[[ -d $app && $(cat "$app/Contents/Resources/$LAUNCHER_HOME-launcher") == "$pb/$LAUNCHER_HOME/scripts/statusline-launch.sh" ]] || fail 'multi-profile: applet not moved'
+grep -qF "$pb/$LAUNCHER_HOME/scripts/statusline-launch.sh" "$temp/applet.src" || fail 'multi-profile: applet not rebuilt for the other profile'
+CLAUDE_STATUSLINE_UNAME=Darwin inst -c "$pb" -U
+[[ ! -e $app ]] || fail 'multi-profile: last mac uninstall left the applet'
 
 # Negative: xdg-mime missing -> note, no .desktop, no marker.
 CLAUDE_STATUSLINE_XDG_MIME=$temp/bin/none inst -c "$cfg" || fail "no xdg-mime: $err"
@@ -156,7 +186,8 @@ WSL_DISTRO_NAME=Ubuntu inst -c "$cfg" || fail "wsl: $err"
 app=$HOME/Applications/$URL_SCHEME-toggle.app
 CLAUDE_STATUSLINE_UNAME=Darwin inst -c "$cfg" || fail "mac install: $err"
 grep -qxF 'on open location u' "$temp/applet.src" || fail 'applet handler'
-grep -qF "do shell script \"bash \" & quoted form of \"$launcher\" & \" --url \" & quoted form of u" "$temp/applet.src" || fail "applet command: $(cat "$temp/applet.src")"
+# The applet's do shell script PATH is /usr/bin:/bin:/usr/sbin:/sbin; Homebrew's jq must be reachable.
+grep -qF "do shell script \"PATH=/opt/homebrew/bin:/usr/local/bin:\$PATH bash \" & quoted form of \"$launcher\" & \" --url \" & quoted form of u" "$temp/applet.src" || fail "applet command: $(cat "$temp/applet.src")"
 grep -qF "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $URL_SCHEME" "$temp/PlistBuddy.log" || fail 'plist URL scheme'
 grep -qxF -- "-f $app" "$temp/lsregister.log" || fail 'lsregister -f'
 [[ -d $app && -f $marker ]] || fail 'mac app or marker missing'
