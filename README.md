@@ -29,7 +29,7 @@ Fable usage is read from a machine-global cache. Refresh runs detached and uses 
 
 ## Reset times
 
-Each 5h and 7d slot shows when its limit resets, then a click hint:
+Each 5h and 7d slot shows when its limit resets, then a click hint (clock values below are UTC; you see your local time):
 
 ```text
 5h [██░░░░░░░░░░] (20%) ↻22:13 ⊟◂ ● 7d [████░░░░░░░░] (30%) ↻M02 ⊟◂      clock (default)
@@ -37,7 +37,7 @@ Each 5h and 7d slot shows when its limit resets, then a click hint:
 ```
 
 - `clock`: 5h as 24h local `↻HH:MM`; 7d as day code plus 24h hour, `↻F14`. Day codes: `M T W R F SA SU` (Mon to Sun, `R` is Thursday). Reset times are rounded up to the next minute.
-- `countdown`: `↻2h13m`, `↻42m`, `↻4d6h`. It sets `statusLine.refreshInterval` to 60 when the status line is claude-statusline's own, and removes it again when you leave `countdown` (a value you set yourself is kept). With any other status line, set `refreshInterval` to 60 or less yourself.
+- `countdown`: `↻2h13m`, `↻42m`, `↻4d6h`. When the status line is claude-statusline's own, selecting it sets `statusLine.refreshInterval` to 60 if none is set, and leaving it removes a `refreshInterval` of exactly 60 (any other value is kept). With any other status line, set `refreshInterval` to 60 or less yourself.
 - `⊟◂` means reset times are shown, `⊞◂` that they are hidden. The `resets` fit-ladder step drops the reset text first when the line does not fit.
 - Config keys in `statusline.json`: `resets` (bool, default `true`) and `resets_format` (`clock` or `countdown`).
 
@@ -47,18 +47,18 @@ Three ways to toggle, all writing only those two keys:
 | --- | --- | --- |
 | `/statusline-resets [toggle\|on\|off\|clock\|countdown\|status]` | Instant, no model turn | Claude Code 2.1.286 or later |
 | `ctrl+x r` | Same as `/statusline-resets toggle`; bound by the installer in `keybindings.json` | Claude Code 2.1.286 or later |
-| Ctrl/Cmd+click on the 5h or 7d slot | Toggles on/off | A terminal with hyperlink support, a registered handler (below); not tmux, not WSL |
+| Ctrl/Cmd+click on the 5h or 7d slot | Toggles on/off | A terminal with hyperlink support and a registered handler (below); no link under tmux, WSL or `NO_COLOR`, or when the config dir is neither `~/.claude` nor `~/.claude-<name>` |
 
 On older Claude Code, edit `statusline.json` or run `scripts/resets-toggle.sh` (`resets-toggle.ps1` on Windows) with `--get`, `--set on|off|toggle` or `--format clock|countdown`.
 
-Click handler by OS (registered by the installer; the `claude-statusline://` scheme is never passed to a shell):
+Click handler by OS (registered by the installer; the `claude-statusline://` URL is validated by full match and passed as a quoted argument, never interpolated into a shell command):
 
 - **Windows**: a `HKCU\Software\Classes\claude-statusline` registry entry, and `claude-statusline` added to Windows Terminal `safeUriSchemes` (the installer prints the settings file it edited; `-W` / `--no-wt-scheme` skips it and prints the line to add yourself).
 - **macOS**: a small applet, `~/Applications/claude-statusline-toggle.app`.
 - **Linux**: `~/.local/share/applications/claude-statusline-toggle.desktop`, set as the `x-scheme-handler/claude-statusline` default through `xdg-mime` (skipped when `xdg-mime` is missing).
 - **WSL and tmux**: no click; use the command or the key.
 
-Remove all of it with `bash scripts/install.sh --uninstall` (`pwsh -NoProfile -File scripts/install.ps1 --uninstall` on Windows). It removes only what the installer added: the key binding, the click handler, the Windows Terminal entry, the launcher directory, an owned `statusLine`, and the plugin entry.
+Remove all of it by running `bash scripts/install.sh --uninstall` (`pwsh -NoProfile -File scripts/install.ps1 --uninstall` on Windows) from the plugin directory, or via the plugin cache path shown under Install. It removes only what the installer added: the key binding, the click handler, the Windows Terminal entry (Windows only; left alone if the install used `-W`), the launcher directory, an owned `statusLine`, and the plugin entry.
 
 ## Checks
 
