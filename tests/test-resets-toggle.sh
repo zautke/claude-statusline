@@ -143,6 +143,17 @@ run --url 'claude-statusline://toggle?slot=5h&profile=work'; expect 0 "$OFF" 'ur
 for i in $(seq 1 60); do printf 'old %s\n' "$i"; done >"$log"
 run --url 'claude-statusline://toggle?slot=5h'; expect 0 "$OFF" 'url log cap'
 [[ $(wc -l <"$log" | tr -d ' ') == 50 && $(head -n 1 "$log") == 'old 12' && $(tail -n 1 "$log") =~ $LOG_LINE_OK ]] || fail 'url log not capped to 50'
+# A profile-less click means ~/.claude, whatever CLAUDE_CONFIG_DIR the handler's environment carries.
+reset; mkdir -p "$HOME/other"
+export CLAUDE_CONFIG_DIR=$HOME/other
+run --url 'claude-statusline://toggle?slot=5h'
+export CLAUDE_CONFIG_DIR=$temp/home/.claude
+expect 0 "$OFF" 'url ambient CLAUDE_CONFIG_DIR'
+[[ $(json "$sl") == '{"resets":false}' && ! -e $HOME/other/statusline.json ]] || fail 'url without profile followed CLAUDE_CONFIG_DIR'
+# A log that cannot be written is reported on stderr; the toggle itself still succeeds.
+reset; put "$CLAUDE_CONFIG_DIR/claude-statusline" 'not a directory'
+run --url 'claude-statusline://toggle?slot=5h'; expect 0 "$OFF" 'url log unwritable'
+[[ $err == *'cannot write'* ]] || fail "url log unwritable not reported: err=[$err]"
 
 # ---- negative (PASS = exactly the declared exit code and no write) ----
 reset; put "$sl" '{"resets":true}'; put "$st" "$OWNED_SETTINGS"; mkdir -p "$HOME/.claude-work"

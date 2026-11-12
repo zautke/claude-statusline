@@ -157,6 +157,16 @@ try {
     Run --url 'claude-statusline://toggle?slot=5h'; Expect 0 $OFF 'url log cap'
     $lines = @(Get-Content -LiteralPath $log)
     if ($lines.Count -ne 50 -or $lines[0] -cne 'old 12' -or $lines[-1] -cnotmatch $LOG_LINE_OK) { Fail 'url log not capped to 50' }
+    # A profile-less click means ~/.claude, whatever CLAUDE_CONFIG_DIR the handler's environment carries.
+    Reset-Home; $other = Join-Path $HomeDir 'other'; New-Item -ItemType Directory $other | Out-Null
+    $env:CLAUDE_CONFIG_DIR = $other
+    try { Run --url 'claude-statusline://toggle?slot=5h' } finally { $env:CLAUDE_CONFIG_DIR = $Cfg }
+    Expect 0 $OFF 'url ambient CLAUDE_CONFIG_DIR'
+    if ((Json $sl) -cne '{"resets":false}' -or (Test-Path -LiteralPath (Join-Path $other 'statusline.json'))) { Fail 'url without profile followed CLAUDE_CONFIG_DIR' }
+    # A log that cannot be written is reported on stderr; the toggle itself still succeeds.
+    Reset-Home; Put (Join-Path $Cfg 'claude-statusline') 'not a directory'
+    Run --url 'claude-statusline://toggle?slot=5h'; Expect 0 $OFF 'url log unwritable'
+    if (-not $script:err.Contains('cannot write')) { Fail "url log unwritable not reported: err=[$($script:err)]" }
 
     # ---- negative (PASS = exactly the declared exit code and no write) ----
     Reset-Home; Put $sl '{"resets":true}'; Put $st $OWNED_SETTINGS; New-Item -ItemType Directory (Join-Path $HomeDir '.claude-work') | Out-Null
