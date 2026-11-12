@@ -174,6 +174,17 @@ app=$HOME/Applications/$URL_SCHEME-toggle.app
 grep -qF "$pb/$LAUNCHER_HOME/scripts/statusline-launch.sh" "$temp/applet.src" || fail 'multi-profile: applet not rebuilt for the other profile'
 CLAUDE_STATUSLINE_UNAME=Darwin inst -c "$pb" -U
 [[ ! -e $app ]] || fail 'multi-profile: last mac uninstall left the applet'
+# A non-canonical --config-dir ($pa/.) names the same profile: the handler is still recognised as its own and is
+# never re-pointed at the launcher the uninstall is about to delete.
+inst -c "$pb"; inst -c "$pa"
+inst -c "$pa/." -U || fail "non-canonical uninstall: $err"
+grep -qxF "Exec=bash \"$pb/$LAUNCHER_HOME/scripts/statusline-launch.sh\" --url %u" "$desktop" || fail "non-canonical config dir: handler not moved to the other profile: $(cat "$desktop")"
+inst -c "$pb" -U
+CLAUDE_STATUSLINE_UNAME=Darwin inst -c "$pb"; CLAUDE_STATUSLINE_UNAME=Darwin inst -c "$pa"
+CLAUDE_STATUSLINE_UNAME=Darwin inst -c "$pa/." -U || fail "non-canonical mac uninstall: $err"
+[[ -d $app && $(cat "$app/Contents/Resources/$LAUNCHER_HOME-launcher") == "$pb/$LAUNCHER_HOME/scripts/statusline-launch.sh" ]] || fail 'non-canonical config dir: applet not moved to the other profile'
+CLAUDE_STATUSLINE_UNAME=Darwin inst -c "$pb" -U
+[[ ! -e $app && ! -e $desktop ]] || fail 'non-canonical config dir: last uninstall left a handler'
 
 # Negative: xdg-mime missing -> note, no .desktop, no marker.
 CLAUDE_STATUSLINE_XDG_MIME=$temp/bin/none inst -c "$cfg" || fail "no xdg-mime: $err"

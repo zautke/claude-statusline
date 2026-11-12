@@ -222,6 +222,14 @@ try {
     if (Test-Path -LiteralPath $regKey) { Fail 'multi-profile: last uninstall left the handler' }
     if ((Read-Text $wt) -cne $wtList) { Fail "multi-profile: WT not restored`n$(Read-Text $wt)" }
     Reset-Reg
+    # A non-canonical --config-dir ($pa\.) names the same profile: the handler is still recognised as its own and is
+    # never re-pointed at the launcher the uninstall is about to delete.
+    $null = Inst @('-c', $pb, '-W'); $null = Inst @('-c', $pa, '-W')
+    $r = Inst @('-c', "$pa\.", '-W', '-U')
+    if ($r.Rc -ne 0 -or (Reg-Cmd) -cne (Expect-Cmd $pb)) { Fail "non-canonical config dir: handler not moved to the other profile: rc=$($r.Rc) cmd=$(Reg-Cmd)" }
+    $null = Inst @('-c', $pb, '-W', '-U')
+    if (Test-Path -LiteralPath $regKey) { Fail 'non-canonical config dir: last uninstall left the handler' }
+    Reset-Reg
 
     # Negative: a foreign handler is kept, warned about, and no marker is written.
     New-Item -Path "$regKey\shell\open\command" -Force | Out-Null
