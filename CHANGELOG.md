@@ -9,7 +9,7 @@ All notable changes to claude-statusline (formerly braisenly-statusline) are doc
 
 ### Minor changes
 
-- Show when the 5h and 7d limits reset. New settings `resets` (on/off) and `resets_format` (`clock` or `countdown`). Clock shows `↻22:40` today and `↻F14` on another day, with day codes M T W R F SA SU. Countdown shows `↻2h13m` or `↻4d6h`. A state glyph, `⊟◂` (hidden) or `⊞◂` (shown), marks the toggle. `resets` is a new step in the fit ladder, so the times drop before anything else is cut.
+- Show when the 5h and 7d limits reset. New settings `resets` (on/off) and `resets_format` (`clock` or `countdown`). Clock shows the 5h slot as `↻HH:MM` (for example `↻22:40`) and the 7d slot as day code plus 24h hour (for example `↻F14`), with day codes M T W R F SA SU. Countdown shows `↻2h13m` or `↻4d6h`. A state glyph marks the toggle: `⊟◂` when the times are shown (click hides them), `⊞◂` when they are hidden (click shows them). `resets` is a new step in the fit ladder, so the times drop before anything else is cut.
 - Toggle the reset times three ways: the `/statusline-resets` mod command (Claude Code 2.1.286 or later), the `ctrl+x r` keybinding, or Ctrl/Cmd+click on the 5h/7d slots (OSC 8 link). Each OS gets a URL handler for the click: a Windows registry entry plus the Windows Terminal `safeUriSchemes` setting, a macOS applet, and a Linux `xdg` handler. All three routes share `scripts/resets-toggle.{sh,ps1}`.
 - The launcher accepts `-u|--url` and passes it to the installed `resets-toggle`.
 - `install.{sh,ps1}` gained `--uninstall` and `-W|--no-wt-scheme` (skip the Windows Terminal scheme edit).
