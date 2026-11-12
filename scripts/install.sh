@@ -126,7 +126,6 @@ uninstall_keybinding() {
 uname_s=${CLAUDE_STATUSLINE_UNAME:-$(uname -s)}
 desktop_name=$URL_SCHEME-toggle.desktop
 desktop=${XDG_DATA_HOME:-$HOME/.local/share}/applications/$desktop_name
-desktop_exec="Exec=bash \"$launcher\" --url %u"
 mimeapps=${XDG_CONFIG_HOME:-$HOME/.config}/mimeapps.list
 mime_default=x-scheme-handler/$URL_SCHEME=$desktop_name
 app=$HOME/Applications/$URL_SCHEME-toggle.app
@@ -190,10 +189,14 @@ install_handler() {
 }
 # Launcher of the first other profile under HOME (~/.claude, ~/.claude-<name>) whose renderer still draws links
 # (marker present). Any profile's launcher serves any profile's click: the URL carries &profile=.
+# Same file or directory, however spelled ($dir/., a symlink alias, a trailing slash).
+same_path() { [[ $1 == "$2" || ( -e $1 && $1 -ef $2 ) ]]; }
+# Whether launcher path $1 is THIS profile's launcher.
+is_our_launcher() { same_path "$1" "$launcher"; }
 other_launcher() {
   local d
   for d in "$HOME/.claude" "$HOME"/.claude-*; do
-    [[ $d == "${config_dir%/}" ]] && continue
+    same_path "$d" "${config_dir%/}" && continue
     if [[ -f $d/$LAUNCHER_HOME/url-handler && -f $d/$LAUNCHER_HOME/scripts/statusline-launch.sh ]]; then
       printf '%s' "$d/$LAUNCHER_HOME/scripts/statusline-launch.sh"; return 0
     fi
@@ -209,11 +212,13 @@ unset_mime_default() {
   atomic_write "$f" "$(grep -vxF -e "$mime_default" -e "$mime_default;" "$f")"
 }
 uninstall_handler() {
-  local next
+  local next exec_launcher=
   next=$(other_launcher) || next=
+  # Launcher named by the .desktop Exec line written by write_desktop: Exec=bash "<launcher>" --url %u
+  [[ -f $desktop ]] && exec_launcher=$(sed -n 's/^Exec=bash "\(.*\)" --url %u$/\1/p' "$desktop" | head -n 1)
   # Only a handler that runs THIS profile's launcher; another profile's stays. If another profile still draws links,
   # the handler moves to that profile's launcher instead of leaving its clicks dangling.
-  if [[ -f $desktop ]] && grep -qxF "$desktop_exec" "$desktop"; then
+  if [[ -n $exec_launcher ]] && is_our_launcher "$exec_launcher"; then
     if [[ -n $next ]] && write_desktop "$next"; then
       "$xdg_mime" default "$desktop_name" "x-scheme-handler/$URL_SCHEME" >/dev/null 2>&1 || true
       printf 'Moved the %s click handler to %s\n' "$URL_SCHEME" "$next"
@@ -221,7 +226,7 @@ uninstall_handler() {
       rm -f "$desktop"; unset_mime_default
     fi
   fi
-  if [[ -f $app_owner && $(cat "$app_owner") == "$launcher" ]]; then
+  if [[ -f $app_owner ]] && is_our_launcher "$(cat "$app_owner")"; then
     if [[ -n $next ]] && build_app "$next"; then printf 'Moved the %s click handler to %s\n' "$URL_SCHEME" "$next"
     else "$lsregister" -u "$app" >/dev/null 2>&1 || true; rm -rf "$app"; fi
   fi

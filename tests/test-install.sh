@@ -185,6 +185,13 @@ CLAUDE_STATUSLINE_UNAME=Darwin inst -c "$pa/." -U || fail "non-canonical mac uni
 [[ -d $app && $(cat "$app/Contents/Resources/$LAUNCHER_HOME-launcher") == "$pb/$LAUNCHER_HOME/scripts/statusline-launch.sh" ]] || fail 'non-canonical config dir: applet not moved to the other profile'
 CLAUDE_STATUSLINE_UNAME=Darwin inst -c "$pb" -U
 [[ ! -e $app && ! -e $desktop ]] || fail 'non-canonical config dir: last uninstall left a handler'
+# Same through a symlink alias of the profile dir.
+ln -s "$pa" "$temp/alias-m2a"
+inst -c "$pb"; inst -c "$pa"
+inst -c "$temp/alias-m2a" -U || fail "symlink-alias uninstall: $err"
+grep -qxF "Exec=bash \"$pb/$LAUNCHER_HOME/scripts/statusline-launch.sh\" --url %u" "$desktop" || fail "symlink-alias config dir: handler not moved to the other profile: $(cat "$desktop")"
+inst -c "$pb" -U
+[[ ! -e $desktop ]] || fail 'symlink-alias config dir: last uninstall left the handler'
 
 # Negative: xdg-mime missing -> note, no .desktop, no marker.
 CLAUDE_STATUSLINE_XDG_MIME=$temp/bin/none inst -c "$cfg" || fail "no xdg-mime: $err"
