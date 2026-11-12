@@ -83,8 +83,9 @@ temp=$(mktemp -d)
 trap 'rm -rf "$temp"' EXIT
 profile=$temp/profile
 # The installer also registers a click handler: keep HOME, XDG dirs and tools inside the sandbox.
-export HOME=$temp/home XDG_DATA_HOME=$temp/xdg-data XDG_CONFIG_HOME=$temp/xdg-config CLAUDE_STATUSLINE_XDG_MIME=$temp/no-xdg-mime
-[[ $HOME == "$temp"/* && $XDG_DATA_HOME == "$temp"/* ]] || { printf 'ABORT: isolation overrides unset\n' >&2; exit 3; }
+# CLAUDE_STATUSLINE_UNAME=none: no handler on any OS, so macOS CI never runs the real osacompile/PlistBuddy/lsregister.
+export HOME=$temp/home XDG_DATA_HOME=$temp/xdg-data XDG_CONFIG_HOME=$temp/xdg-config CLAUDE_STATUSLINE_XDG_MIME=$temp/no-xdg-mime CLAUDE_STATUSLINE_UNAME=none
+[[ $HOME == "$temp"/* && $XDG_DATA_HOME == "$temp"/* && $CLAUDE_STATUSLINE_UNAME == none ]] || { printf 'ABORT: isolation overrides unset\n' >&2; exit 3; }
 
 # Fresh install: launcher copied, statusLine points at it, plugin enabled.
 bash "$plugin/scripts/install.sh" --config-dir "$profile" >/dev/null
