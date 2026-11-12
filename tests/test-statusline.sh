@@ -11,6 +11,11 @@ case "${1:-}" in
   *) Usage >&2; exit 2 ;;
 esac
 
+# The assertions below measure with ${#var}, which counts bytes in a byte locale (empty under ssh, C, POSIX): run this
+# script itself in a UTF-8 locale that works here. Renders under other locales are asserted explicitly further down.
+_g='█'; for _l in '' C.UTF-8 en_US.UTF-8; do [[ -z $_l ]] || export LC_ALL=$_l; ((${#_g}==1))&&break; done
+((${#_g}==1)) || { printf 'no working UTF-8 locale for the test itself\n' >&2; exit 1; }
+utf8_locale=${LC_ALL:-${LC_CTYPE:-${LANG:-}}}
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -347,6 +352,27 @@ for d in "$TMP/x" "$HOME/.claude-bad/name" "$HOME/.claude-b@d" "$HOME/claude-t";
 lcfg "$lhome" "{$cd_,\"segments\":[\"five_hour\",\"seven_day\"],\"fit\":{\"rows\":1,\"ladder\":[\"five_segment\"]}}"
 l5=$(lr "$lhome" 10)
 [[ $l5 != *bsl-5h* && $l5 == *"$O7"*7d*"$C"* && $(nlinks "$l5") -eq 1 && ${l5//"$C"/} == "${l5/"$C"/}" ]] || { printf 'link five_segment: %q\n' "$l5" >&2; exit 1; }
+
+# ---- locale independence: the render is byte-identical under any locale, and never hangs ----
+# Colour, OSC 8 links and a stacked fit at 70 and 50 columns, so the width loops in cells() run on every render. Each
+# render runs under a 20 s alarm (perl: present on macOS and Linux, unlike timeout(1) on older macOS).
+# no-utf8 simulates a host where no UTF-8 locale can be switched on: LC_ALL is a readonly C in the shell that sources
+# the renderer, so its locale switch fails and the widths must still come out right.
+lcfg "$lhome" "{$cd_,\"segments\":[\"model\",\"context\",\"five_hour\",\"seven_day\",\"fable\"],\"fit\":{\"rows\":2}}"
+lrl() { # $1 columns, $2 one locale assignment for env, or no-utf8
+  local e=$2 run=(perl -e 'alarm 20; exec @ARGV' ${TEST_BASH:-bash})
+  [[ $e == no-utf8 ]] && { e=LC_ALL=C; run+=(-c 'readonly LC_ALL=C; f=$1; shift; . "$f"' no-utf8); }
+  printf '%s' "$payload" | env -u NO_COLOR -u TMUX -u WSL_DISTRO_NAME -u LANG -u LC_ALL -u LC_CTYPE CLAUDE_CONFIG_DIR="$lhome" COLUMNS="$1" \
+    CLAUDE_STATUSLINE_DISABLE_REFRESH=1 "$e" "${run[@]}" "$ROOT/scripts/statusline-command.sh" 2>/dev/null
+}
+for c in 400 70 50; do
+  ref=$(lrl "$c" LC_ALL="$utf8_locale")
+  [[ $ref == *"$O5"* ]] || { printf 'locale reference at %s cols: no link, loops not exercised: %q\n' "$c" "$ref" >&2; exit 1; }
+  for loc in LC_ALL=C LC_ALL=POSIX LANG= LC_ALL=xx_XX.UTF-8 LC_ALL=C.UTF-8 no-utf8; do
+    o=$(lrl "$c" "$loc") && rc=0 || rc=$?
+    [[ $rc == 0 && $o == "$ref" ]] || { printf 'locale %s at %s cols: rc=%s, render differs from %s:\n%q\n%q\n' "$loc" "$c" "$rc" "$utf8_locale" "$o" "$ref" >&2; exit 1; }
+  done
+done
 
 ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh" --help | grep -q '^Usage:'
 
