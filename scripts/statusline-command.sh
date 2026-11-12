@@ -154,11 +154,19 @@ if [[ $_q != - && -z ${TMUX+x}${WSL_DISTRO_NAME+x}${NO_COLOR:-} && -e $_d/$LAUNC
 fi
 unset _d _q
 
-# ${#var} must count characters, not bytes: pick a UTF-8 locale if the host left us in a byte locale.
-_g='█'; if ((${#_g}!=1)); then for _l in C.UTF-8 en_US.UTF-8; do LC_ALL=$_l; ((${#_g}==1))&&break; done; fi
+# ${#var} and ${var:0:1} on labels must count characters, not bytes: if the host left us in a byte locale (empty under
+# ssh or a GUI launch, C, POSIX, or one that does not exist), switch to a UTF-8 locale that works here. The ${#_g} probe
+# proves the locale is usable without forking `locale -a`. Display widths do not depend on it: cells() is byte-safe.
+# ponytail: with no working UTF-8 locale at all, a non-ASCII label's first-letter step (fable_short) and the 30-char cwd
+# cut-off count bytes; widths stay right. Upgrade path: a byte-safe substring helper if such a host ever appears.
+_o=${LC_ALL-} _g='█'
+if ((${#_g}!=1)); then case $OSTYPE in darwin*) _c='en_US.UTF-8 C.UTF-8';; *) _c='C.UTF-8 en_US.UTF-8';; esac
+  for _l in $_c; do LC_ALL=$_l; ((${#_g}==1))&&break; done; fi
 # Pin LC_ALL explicitly: functions below set a temporary `local LC_ALL=C`, and restoring an unset variable is not
 # portable across Bash versions, so give it a definite value to come back to.
-[[ -n ${LC_ALL:-} ]] || LC_ALL=${LC_CTYPE:-${LANG:-C.UTF-8}}; export LC_ALL; unset _g _l
+[[ -n ${LC_ALL:-} ]] || LC_ALL=${LC_CTYPE:-${LANG:-C.UTF-8}}
+# The switch is this process's own business: child processes (jq, awk, df) keep the locale they were given.
+[[ $LC_ALL == "$_o" ]] || export -n LC_ALL; unset _o _g _c _l
 sep="$sep_color ● $reset"
 # fmt_bytes <bytes> [decimals]
 fmt_bytes() { local b=$1 d=${2:-1}; if ((b>=1073741824)); then awk -v b="$b" -v d="$d" 'BEGIN{printf "%.*fG",d,b/1073741824}'; elif ((b>=1048576)); then awk -v b="$b" -v d="$d" 'BEGIN{printf "%.*fM",d,b/1048576}'; elif ((b>=1024)); then awk -v b="$b" -v d="$d" 'BEGIN{printf "%.*fK",d,b/1024}'; else printf '%dB' "$b"; fi; }
@@ -190,14 +198,19 @@ utf8_cp() { local LC_ALL=C c=$1 b0 b1 b2 b3; printf -v b0 '%d' "'${c:0:1}"; ((b0
     3) printf -v b1 '%d' "'${c:1:1}"; printf -v b2 '%d' "'${c:2:1}"; ((b1<0))&&b1=$((b1+256)); ((b2<0))&&b2=$((b2+256)); cp=$(((b0&0x0F)<<12|(b1&0x3F)<<6|(b2&0x3F)));;
     *) printf -v b1 '%d' "'${c:1:1}"; printf -v b2 '%d' "'${c:2:1}"; printf -v b3 '%d' "'${c:3:1}"; ((b1<0))&&b1=$((b1+256)); ((b2<0))&&b2=$((b2+256)); ((b3<0))&&b3=$((b3+256)); cp=$(((b0&0x07)<<18|(b1&0x3F)<<12|(b2&0x3F)<<6|(b3&0x3F)));; esac; }
 cells() {
-  local s=$1 pre rest a b o=$'\033]8;' st=$'\033\\' bel=$'\a'
+  # Byte-wise under LC_ALL=C whatever the host locale: no UTF-8 locale is needed for the count, and [[ == ]] and the
+  # ${s#...} strips agree on every byte. Each loop also stops unless the strip shrank $s, so it always terminates.
+  local LC_ALL=C s=$1 pre rest a b n o=$'\033]8;' st=$'\033\\' bel=$'\a'
   # OSC 8 hyperlinks: drop ESC ] 8 ; params ; uri through its ST (ESC \) or BEL, whichever comes first.
   while [[ $s == *"$o"* ]]; do
-    pre=${s%%"$o"*}; rest=${s#*"$o"}; a=${rest#*"$st"}; b=${rest#*"$bel"}
+    n=${#s}; pre=${s%%"$o"*}; rest=${s#*"$o"}; a=${rest#*"$st"}; b=${rest#*"$bel"}
     if [[ $a != "$rest" && ( $b == "$rest" || ${#a} -ge ${#b} ) ]]; then s=$pre$a; elif [[ $b != "$rest" ]]; then s=$pre$b; else break; fi
+    ((${#s}<n))||break
   done
-  while [[ $s == *$'\033['*m* ]]; do pre=${s%%$'\033['*}; rest=${s#*$'\033['}; s=$pre${rest#*m}; done
-  N=${#s}; count_wide "$s"; N=$((N+W))
+  while [[ $s == *$'\033['*m* ]]; do n=${#s}; pre=${s%%$'\033['*}; rest=${s#*$'\033['}; s=$pre${rest#*m}; ((${#s}<n))||break; done
+  # Characters = bytes minus UTF-8 continuation bytes (0x80-0xBF).
+  rest=${s//[$'\x80'-$'\xbf']/}
+  N=${#rest}; count_wide "$s"; N=$((N+W))
 }
 # Extra cells for East Asian Wide / emoji characters. Works byte-wise under LC_ALL=C because Bash 3.2's pattern
 # matching mangles multibyte characters in a UTF-8 locale; only the non-ASCII bytes are walked, so it stays fast.
