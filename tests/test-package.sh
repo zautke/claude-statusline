@@ -26,7 +26,7 @@ jq -e --arg n "$PLUGIN_NAME" '.name==$n' "$plugin/.claude-plugin/plugin.json" >/
 semver_ok "$(jq -r .version "$plugin/.claude-plugin/plugin.json")" || fail 'plugin.json version is not plain SemVer MAJOR.MINOR.PATCH'
 jq -e --arg m "$MARKETPLACE" --arg n "$PLUGIN_NAME" '.name==$m and (.plugins|length)==1 and .plugins[0].name==$n and .plugins[0].source=="."' \
   "$plugin/.claude-plugin/marketplace.json" >/dev/null || fail 'marketplace.json identity'
-jq -e '.skill_name=="configure-statusline" and (.evals|length)==4' "$plugin/skills/configure-statusline/evals/evals.json" >/dev/null || fail 'skill evals'
+jq -e '.skill_name=="configure-statusline" and (.evals|length)==5' "$plugin/skills/configure-statusline/evals/evals.json" >/dev/null || fail 'skill evals'
 # Reset-toggle identity keys exist (usage sites are asserted as they land).
 [[ ${RESETS_COMMAND_NAME:-} == statusline-resets ]] || fail 'identity RESETS_COMMAND_NAME'
 [[ ${URL_SCHEME:-} == claude-statusline ]] || fail 'identity URL_SCHEME'
@@ -56,9 +56,22 @@ for f in install.sh install.ps1; do
   grep -q 'RESETS_TOGGLE_DEFAULT_KEY_CHORD_CTRL_X_THEN_R' "$plugin/scripts/$f" && grep -q 'RESETS_COMMAND_NAME' "$plugin/scripts/$f" &&
     grep -q 'URL_SCHEME' "$plugin/scripts/$f" || fail "$f does not take chord/command/scheme from constants/identity"
 done
-if [[ -f $plugin/hooks/register.js ]]; then
-  grep -qE "[\"']$RESETS_COMMAND_NAME[\"']" "$plugin/hooks/register.js" || fail 'register.js command name differs from identity.env'
-fi
+# Mod manifest: exactly the one module, nothing else (parsed, so whitespace does not matter).
+jq -e '. == {"hooks":{},"modules":["./register.js"]}' "$plugin/hooks/hooks.json" >/dev/null || fail 'hooks.json is not {"hooks":{},"modules":["./register.js"]}'
+# register.js: every command name it registers or listens for equals identity.env; every script path it builds exists.
+[[ -f $plugin/hooks/register.js ]] || fail 'hooks/register.js missing'
+command_name_literals() { grep -oE "(name|command): *['\"][^'\"]*['\"]" | sed -E "s/^[a-z]+: *['\"]//; s/['\"]\$//"; }
+reg_names=$(command_name_literals <"$plugin/hooks/register.js")
+[[ -n $reg_names ]] || fail 'register.js: no command name found'
+while IFS= read -r n; do
+  [[ $n == "$RESETS_COMMAND_NAME" ]] || fail "register.js command name '$n' differs from identity.env RESETS_COMMAND_NAME"
+done <<<"$reg_names"
+reg_scripts=$(grep -oE 'scripts/[A-Za-z0-9_.-]+' "$plugin/hooks/register.js" | sort -u | tr '\n' ' ')
+[[ $reg_scripts == 'scripts/resets-toggle.ps1 scripts/resets-toggle.sh ' ]] || fail "register.js builds unexpected script paths: $reg_scripts"
+for s in $reg_scripts; do [[ -f $plugin/$s ]] || fail "register.js script missing: $s"; done
+# Negative: a command name that drifted from identity.env is caught (PASS = differs).
+drift=$(printf "x({name: 'statusline-resetz'})" | command_name_literals)
+[[ -n $drift && $drift != "$RESETS_COMMAND_NAME" ]] || fail 'negative: drifted command name not detected'
 # Install Usage lists every flag, in both twins.
 for s in install.sh install.ps1; do
   for flag in '-c, --config-dir' '-f, --force' '-U, --uninstall' '-W, --no-wt-scheme' '-h, --help'; do
@@ -108,5 +121,19 @@ before=$(cksum <"$profile/settings.json")
 if err=$(bash "$plugin/scripts/install.sh" --config-dir "$profile" 2>&1 >/dev/null); then fail 'negative: unrelated command replaced'; fi
 [[ $err == 'Refusing to replace unrelated statusLine command: echo mine' ]] || fail "negative: wrong message: $err"
 [[ $(cksum <"$profile/settings.json") == "$before" ]] || fail 'negative: settings changed on refusal'
+
+# Example config: opts into reset times, puts the `resets` ladder step first, and the bash renderer accepts it whole.
+# Validation is all-or-nothing (a rejected file silently falls back to defaults), so a distinctive label proves it was used.
+jq -e '.resets==true and .resets_format=="clock" and .fit.ladder[0]=="resets"' "$plugin/statusline.example.json" >/dev/null || fail 'example config lacks resets / resets_format / ladder step'
+ex=$temp/example-profile; mkdir -p "$ex" "$temp/cache"
+jq '.labels.five_hour="ZZ"' "$plugin/statusline.example.json" >"$ex/statusline.json"
+payload='{"model":{"display_name":"Claude"},"rate_limits":{"five_hour":{"used_percentage":20,"resets_at":1794435180},"seven_day":{"used_percentage":30,"resets_at":1794794400}}}'
+render() { printf '%s' "$payload" | NO_COLOR=1 CLAUDE_CONFIG_DIR="$1" XDG_CACHE_HOME="$temp/cache" CLAUDE_STATUSLINE_DISABLE_REFRESH=1 CLAUDE_STATUSLINE_DISABLE_WATCH=1 CLAUDE_STATUSLINE_NOW=1794427200 COLUMNS=300 bash "$plugin/scripts/statusline-command.sh"; }
+out=$(render "$ex")
+[[ $out == *'ZZ ['* && $out == *'↻'* ]] || fail "bash renderer did not accept statusline.example.json: $out"
+# Negative: the same file with an unknown ladder step is rejected, so defaults (label 5h) resume (PASS = fallback seen).
+jq '.fit.ladder+=["bogus"]' "$ex/statusline.json" >"$ex/bad.json" && mv "$ex/bad.json" "$ex/statusline.json"
+out=$(render "$ex")
+[[ $out != *'ZZ ['* && $out == *'5h ['* ]] || fail "negative: invalid example did not fall back to defaults: $out"
 
 printf 'ok\n'
