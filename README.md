@@ -17,7 +17,7 @@ bash "$(jq -r '.plugins["claude-statusline@claude-statusline"] | (map(select(.sc
 ```
 
 ```powershell
-# Windows
+# Windows, PowerShell 7 (pwsh); Windows PowerShell 5.1 cannot parse ?? or Sort-Object -Stable
 $p = (Get-Content -Raw "$($env:CLAUDE_CONFIG_DIR ?? "$HOME\.claude")\plugins\installed_plugins.json" | ConvertFrom-Json).plugins.'claude-statusline@claude-statusline' | Sort-Object -Stable { $_.scope -ne 'user' } | Select-Object -First 1
 pwsh -NoProfile -File (Join-Path $p.installPath 'scripts\install.ps1')
 ```
