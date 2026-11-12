@@ -5,6 +5,24 @@ All notable changes to claude-statusline (formerly braisenly-statusline) are doc
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Releases are tagged `claude-statusline@X.Y.Z`
 (up to 1.1.0: `braisenly-statusline@X.Y.Z`).
 
+## [2.1.0] — 2026-11-11
+
+### Minor changes
+
+- Show when the 5h and 7d limits reset. New settings `resets` (on/off) and `resets_format` (`clock` or `countdown`). Clock shows `↻22:40` today and `↻F14` on another day, with day codes M T W R F SA SU. Countdown shows `↻2h13m` or `↻4d6h`. A state glyph, `⊟◂` (hidden) or `⊞◂` (shown), marks the toggle. `resets` is a new step in the fit ladder, so the times drop before anything else is cut.
+- Toggle the reset times three ways: the `/statusline-resets` mod command (Claude Code 2.1.286 or later), the `ctrl+x r` keybinding, or Ctrl/Cmd+click on the 5h/7d slots (OSC 8 link). Each OS gets a URL handler for the click: a Windows registry entry plus the Windows Terminal `safeUriSchemes` setting, a macOS applet, and a Linux `xdg` handler. All three routes share `scripts/resets-toggle.{sh,ps1}`.
+- The launcher accepts `-u|--url` and passes it to the installed `resets-toggle`.
+- `install.{sh,ps1}` gained `--uninstall` and `-W|--no-wt-scheme` (skip the Windows Terminal scheme edit).
+- CI runs `claude plugin test` and `claude plugin validate`.
+
+### Patch changes
+
+- PowerShell 7 turned ISO dates in JSON into `DateTime` values and rewrote them. The Fable cache, `install.ps1` and `resize-watch.ps1` now keep ISO dates verbatim.
+- `install.ps1` now honours `--config-dir` and `--force`. It ignored both before.
+- The installers write through a symlinked `settings.json` instead of replacing the link.
+- The PowerShell renderer's model colour and bar gradient now match the Bash renderer.
+- The Bash renderer's width count no longer depends on the locale: `cells()` counts bytes minus UTF-8 continuation bytes, so widths are right even when no UTF-8 locale can be switched on (the fit used to over-shrink there). Its strip loops now stop unless each pass shortens the string, so they always terminate. `LC_ALL` is no longer exported to child processes.
+
 ## [2.0.0] — 2026-10-21
 
 ### Breaking changes
