@@ -9,17 +9,26 @@ claude plugin marketplace add zautke/claude-statusline
 claude plugin install claude-statusline@claude-statusline
 ```
 
-Then point the status line at the stable launcher. Run the installer from the installed plugin, or ask the `configure-statusline` skill to install it:
+Then point the status line at the stable launcher. Run the installer of the installed version (the plugin cache keeps old versions side by side, so look its path up in `installed_plugins.json` rather than globbing the cache), or ask the `configure-statusline` skill to install it:
 
 ```bash
-bash ~/.claude/plugins/cache/claude-statusline/claude-statusline/*/scripts/install.sh   # macOS / Linux
+# macOS / Linux
+bash "$(jq -r '.plugins["claude-statusline@claude-statusline"] | (map(select(.scope == "user")) + .)[0].installPath' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json")/scripts/install.sh"
 ```
 
 ```powershell
-pwsh -NoProfile -File (Resolve-Path "$HOME\.claude\plugins\cache\claude-statusline\claude-statusline\*\scripts\install.ps1")   # Windows
+# Windows
+$p = (Get-Content -Raw "$($env:CLAUDE_CONFIG_DIR ?? "$HOME\.claude")\plugins\installed_plugins.json" | ConvertFrom-Json).plugins.'claude-statusline@claude-statusline' | Sort-Object -Stable { $_.scope -ne 'user' } | Select-Object -First 1
+pwsh -NoProfile -File (Join-Path $p.installPath 'scripts\install.ps1')
 ```
 
+Add installer flags after the command, for example `--uninstall`.
+
 The installer copies a small launcher to `~/.claude/claude-statusline/` and sets `statusLine.command` to it. On each render the launcher reads `installed_plugins.json` and runs the installed version's renderer, so `claude plugin update` reaches the status line without another settings edit. If the plugin is not installed, the status line shows `claude-statusline: not installed`.
+
+### Upgrading from 2.0.0
+
+`claude plugin update` brings the new renderer and the `/statusline-resets` command, but not the `ctrl+x r` key binding or the click handler. Re-run the installer (the command above) once after updating to get them. If your `statusline.json` sets `fit.ladder`, add `"resets"` at the front of it, or set `"resets": false`; otherwise a narrow line drops other segments before the new reset text.
 
 ## Configure
 
@@ -38,7 +47,7 @@ Each 5h and 7d slot shows when its limit resets, then a click hint (clock values
 
 - `clock`: 5h as 24h local `↻HH:MM`; 7d as day code plus 24h hour, `↻F14`. Day codes: `M T W R F SA SU` (Mon to Sun, `R` is Thursday). Reset times are rounded up to the next minute.
 - `countdown`: `↻2h13m`, `↻42m`, `↻4d6h`. When the status line is claude-statusline's own, selecting it sets `statusLine.refreshInterval` to 60 if none is set, and leaving it removes a `refreshInterval` of exactly 60 (any other value is kept). With any other status line, set `refreshInterval` to 60 or less yourself.
-- `⊟◂` means reset times are shown, `⊞◂` that they are hidden. The `resets` fit-ladder step drops the reset text first when the line does not fit.
+- `⊟◂` means reset times are shown, `⊞◂` that they are hidden. The `resets` fit-ladder step drops the reset text first when the line does not fit. It is first only in the default ladder: a custom `fit.ladder` is used as written, so add `"resets"` at its front (or set `"resets": false`).
 - Config keys in `statusline.json`: `resets` (bool, default `true`) and `resets_format` (`clock` or `countdown`).
 
 Three ways to toggle, all writing only those two keys:
@@ -58,7 +67,7 @@ Click handler by OS (registered by the installer; the `claude-statusline://` URL
 - **Linux**: `~/.local/share/applications/claude-statusline-toggle.desktop`, set as the `x-scheme-handler/claude-statusline` default through `xdg-mime` (skipped when `xdg-mime` is missing).
 - **WSL and tmux**: no click; use the command or the key.
 
-Remove all of it by running `bash scripts/install.sh --uninstall` (`pwsh -NoProfile -File scripts/install.ps1 --uninstall` on Windows) from the plugin directory, or via the plugin cache path shown under Install. It removes only what the installer added: the key binding, the click handler, the Windows Terminal entry (Windows only; left alone if the install used `-W`), the launcher directory, an owned `statusLine`, and the plugin entry.
+Remove all of it by running `bash scripts/install.sh --uninstall` (`pwsh -NoProfile -File scripts/install.ps1 --uninstall` on Windows) from the plugin directory, or by adding `--uninstall` to the install command under Install. It removes only what the installer added: the key binding, the click handler, our Windows Terminal `safeUriSchemes` entry (Windows only; kept if you pass `-W` to `--uninstall`, and kept while another profile's handler remains), the launcher directory, an owned `statusLine`, and the plugin entry. When another profile (`~/.claude` or `~/.claude-<name>`) still has the click handler installed, the handler moves to that profile instead of being removed.
 
 ## Checks
 

@@ -15,6 +15,7 @@ Operate on the active profile only: `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`. Prese
 3. The installer copies the stable launcher to `<config-dir>/claude-statusline/` and points `statusLine` at it. The launcher finds the installed plugin version on every render, so plugin updates need no settings edit. It also enables `claude-statusline@claude-statusline`.
 4. Commands pointing at a `claude-statusline` or legacy `braisenly-statusline` clone or plugin cache path, or legacy `bash ~/.claude/statusline-dispatcher.sh` are claude-statusline-owned and safe to migrate.
 5. Do not copy renderer scripts outside the plugin; only the launcher lives outside it.
+6. Upgrading from 2.0.0: `claude plugin update` does not add the `ctrl+x r` binding or the click handler; re-run the installer once. When running it outside this skill, take the path from `installed_plugins.json`, never a glob over the plugin cache (old versions stay there side by side): bash `bash "$(jq -r '.plugins["claude-statusline@claude-statusline"] | (map(select(.scope == "user")) + .)[0].installPath' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json")/scripts/install.sh"`; pwsh `$p = (Get-Content -Raw "$($env:CLAUDE_CONFIG_DIR ?? "$HOME\.claude")\plugins\installed_plugins.json" | ConvertFrom-Json).plugins.'claude-statusline@claude-statusline' | Sort-Object -Stable { $_.scope -ne 'user' } | Select-Object -First 1; pwsh -NoProfile -File (Join-Path $p.installPath 'scripts\install.ps1')`.
 
 ## Configure
 
@@ -39,7 +40,7 @@ Each 5h and 7d slot can show when its limit resets, from the `rate_limits.*.rese
 - `clock` (default): 5h shows `↻22:40` (24h `HH:MM`); 7d shows `↻F14` (day code plus 24h hour). Day codes: `M` Mon, `T` Tue, `W` Wed, `R` Thu, `F` Fri, `SA` Sat, `SU` Sun.
 - `countdown`: `↻2h13m`, under an hour `↻42m`, a day or more `↻4d6h`.
 - Every rendered 5h/7d slot ends with a 2-cell click hint: `⊟◂` when reset times are shown, `⊞◂` when `resets` is `false`.
-- Ladder: `resets` is the first default step, so a narrow line drops the reset text and hint from both slots before anything else.
+- Ladder: `resets` is the first default step, so a narrow line drops the reset text and hint from both slots before anything else. A custom `fit.ladder` is used as written. Whenever you touch a `statusline.json` whose `fit.ladder` lacks `resets`, offer the user the choice: add `"resets"` at the front of the ladder, or set `"resets": false`. Do not add it without asking.
 
 Three ways to toggle, all rewriting only `resets` / `resets_format` in `statusline.json` (other keys are kept, a missing file is created, an invalid one is refused untouched):
 
@@ -51,7 +52,7 @@ On older clients, or when none of the three works, edit `statusline.json` direct
 
 Countdown only stays current if the status line refreshes. When the status line is claude-statusline's own, selecting `countdown` sets `statusLine.refreshInterval` to 60 when none is set, and leaving `countdown` removes a `refreshInterval` of exactly 60 (even one the user set); any other value is kept. When the status line is not ours, nothing in `settings.json` is touched, and the user must set `statusLine.refreshInterval` to 60 or less themselves. When a toggle actually changes `statusline.json` and the status line is ours, it also bumps the `# bsl-cols=` nonce so Claude Code redraws at once.
 
-Uninstall: `bash <plugin-root>/scripts/install.sh --uninstall` (`pwsh -NoProfile -File <plugin-root>/scripts/install.ps1 --uninstall` on Windows; short form `-U`). It removes only what the installer added: the `ctrl+x r` entry, the click handler and its marker, the Windows Terminal scheme entry (Windows only; left alone if the install used `-W`), the launcher directory, an owned `statusLine`, and the `enabledPlugins` entry.
+Uninstall: `bash <plugin-root>/scripts/install.sh --uninstall` (`pwsh -NoProfile -File <plugin-root>/scripts/install.ps1 --uninstall` on Windows; short form `-U`). It removes only what the installer added: the `ctrl+x r` entry, the click handler and its marker, our Windows Terminal `safeUriSchemes` entry (Windows only; kept if `-W` is passed to `--uninstall`, and kept while another profile's handler remains), the launcher directory, an owned `statusLine`, and the `enabledPlugins` entry. If another profile (`~/.claude` or `~/.claude-<name>`) still has the click handler installed, the handler moves to that profile's launcher instead of being removed.
 
 ## Resize watch
 

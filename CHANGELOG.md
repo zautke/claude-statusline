@@ -14,8 +14,20 @@ All notable changes to claude-statusline (formerly braisenly-statusline) are doc
 - The launcher accepts `-u|--url` and passes it to the installed `resets-toggle`.
 - `install.{sh,ps1}` gained `--uninstall` and `-W|--no-wt-scheme` (skip the Windows Terminal scheme edit).
 - CI runs `claude plugin test` and `claude plugin validate`.
+- Upgrading from 2.0.0: `claude plugin update` brings the renderer and the command, but re-run the installer once to get the `ctrl+x r` key binding and the click handler. Use the installed version's installer, looked up in `installed_plugins.json`, not a glob over the plugin cache (which keeps 2.0.0 beside 2.1.0, so a glob runs the old installer):
+  - bash: `bash "$(jq -r '.plugins["claude-statusline@claude-statusline"] | (map(select(.scope == "user")) + .)[0].installPath' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json")/scripts/install.sh"`
+  - pwsh: `$p = (Get-Content -Raw "$($env:CLAUDE_CONFIG_DIR ?? "$HOME\.claude")\plugins\installed_plugins.json" | ConvertFrom-Json).plugins.'claude-statusline@claude-statusline' | Sort-Object -Stable { $_.scope -ne 'user' } | Select-Object -First 1; pwsh -NoProfile -File (Join-Path $p.installPath 'scripts\install.ps1')`
+- A custom `fit.ladder` is used as written and does not gain `resets`, which is first only in the default ladder. If your `statusline.json` sets `fit.ladder`, add `"resets"` at its front, or set `"resets": false`, so a narrow line drops the reset text before your other segments.
+- `--uninstall` of the profile that holds the click handler moves the handler to another profile that still has it installed, instead of leaving that profile's links dead.
 
 ### Patch changes
+
+- A click link without `&profile=` now always toggles `~/.claude`; it used to follow the `CLAUDE_CONFIG_DIR` of the environment the click handler ran in.
+- The installers merge `statusLine` instead of replacing it, so a re-install keeps `refreshInterval` and keys such as `padding`.
+- `install.ps1` stops with an error, and leaves no temp file, when it cannot replace a file held open by another program; it used to report success.
+- The macOS click applet adds `/opt/homebrew/bin:/usr/local/bin` to its `PATH`, so a Homebrew `jq` is found.
+- A Linux `--uninstall` also removes the `x-scheme-handler/claude-statusline` default from `mimeapps.list`.
+- `resets-toggle.sh` warns when it cannot write `url-handler.log`, as the PowerShell twin does.
 
 - PowerShell 7 turned ISO dates in JSON into `DateTime` values and rewrote them. The Fable cache, `install.ps1` and `resize-watch.ps1` now keep ISO dates verbatim.
 - `install.ps1` now honours `--config-dir` and `--force`. It ignored both before.
