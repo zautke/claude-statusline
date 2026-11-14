@@ -36,3 +36,13 @@
 - Before claiming work is lost, check: `git branch -a`, `git worktree list`, `git stash list` on every clone on both hosts (incl. `~/.claude/plugins/marketplaces/claude-statusline`), `gh pr list --state all`, `gh api repos/zautke/claude-statusline/events`, both hosts' `~/.claude/history.jsonl`, user messages inside every transcript (Remote Control prompts can skip history.jsonl), and Codex sessions. On 2026-11-09 all were empty for public-release work.
 - No Claude Code session had ever run with cwd `/Users/derp/claude-statusline` on largo before 2026-11-09; earlier largo work ran in `~/braisenly-statusline` (deleted 2026-10-21).
 - adagio's `~/.claude/history.jsonl` stopped recording after 2026-11-08 12:49 although sessions ran later; do not treat its absence of prompts as proof.
+
+## 2026-11-13
+
+- Private-use codepoints from U+100000 up are taken by Apple SF Symbols on macOS; a terminal draws Apple's icons there instead of a custom font. Nerd Fonts hold U+E000–F8FF and U+F0001–F1AF0. The ring font uses U+FFF00–U+FFF64 (UTF-8 `F3 BF BC+p/64 80+p%64`).
+- A font built with fontTools `FontBuilder` gets a junk PostScript name (`font0000…`) unless `psName` is passed to `setupNameTable`.
+- Spike generator parameters: em 1000, ascent 800, descent 200, advance 1200, ring centre (600, 300), outer radius 480, inner 290, arc as line segments every ~3°, TrueType outlines, family `Statusline Rings`.
+- A font installed while a terminal is running: a fresh process (Terminal.app, a Swift CoreText check) resolved the fallback at once; the already-running iTerm2 3.7.7 did not. Restart is unverified as the cure.
+- iTerm2 "Special Exceptions" (codepoint range → font) is only offered when the profile's non-ASCII font switch is on; the user's profiles have it off (`Normal Font` = `VictorMonoNFM-Regular 13`).
+- A window opened by `osascript … create window with default profile command` runs macOS `/bin/bash` 3.2 for `#!/usr/bin/env bash`; `printf '\U…'` prints literally there.
+- largo had 2.1 GiB free on 2026-11-13.

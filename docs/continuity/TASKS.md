@@ -62,3 +62,16 @@
 - [ ] Version bump + CHANGELOG + tag per kb release protocol; release-record surfaces (kb project log, org log, memories)
 - [ ] Promote to `main`
 - [ ] User OK, then `gh repo edit --visibility public`; add topics and homepage
+
+## Radial indicators (2026-11-13 →)
+
+- [x] Research stock glyph options and Claude Code's image-escape handling
+- [x] Short design approved; design doc committed; draft PR #17
+- [x] Spike font (101 rings) built; renders in a fresh Terminal.app
+- [ ] User restarts iTerm2; rerun the ring demo there and screenshot
+- [ ] Update the design doc: U+FFF00 range, PostScript name, raw UTF-8 bytes, one-cell width finding
+- [ ] Test Windows Terminal on adagio (PowerShell tool required; check whether `font.face` needs the ring font listed)
+- [ ] Test ring codepoints inside the real Claude Code status line (cell width, truncation)
+- [ ] Glyph geometry: fill the cell height, heavier stroke; decide one or two cells
+- [ ] Implementation plan, then build
+- [ ] Remove the spike font from `~/Library/Fonts` once the real installer replaces it

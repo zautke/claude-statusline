@@ -44,3 +44,13 @@ A Claude Code status line (bash + PowerShell) that fits any terminal width while
 - Removing the drift tooling; only the statusline segment was retired. Drift now lives here.
 - Codex, Copilot and Agent Plugins manifests (user decision 2026-10-20: Claude Code only).
 - Wiring the drift hook in 2.0.0 (deferred by the user 2026-10-21; open in TASKS).
+
+## Radial indicators (opened 2026-11-13)
+
+| Phase | Status | Evidence |
+|---|---|---|
+| R1. Feasibility research and approved design | done 2026-11-13 | PR #17, `docs/superpowers/specs/2026-11-13-radial-indicators-design.md` on `feat/radial-indicators` |
+| R2. Spike: ring font renders in iTerm2, Windows Terminal and the real status line | in progress; Terminal.app proven, iTerm2 awaits restart, Windows Terminal untested | SESSION_LOG 2026-11-13 |
+| R3. Implementation plan, then build (`style: bar \| ring`, font generator, installers, tests, README) | not started | |
+
+Current facts: custom font, 101 ring glyphs at U+FFF00–U+FFF64, colour from `heat_rgb`, default stays `bar`. Non-goals: pixel-graphics protocols; a gradient along the arc inside one ring.

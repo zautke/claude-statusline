@@ -23,3 +23,10 @@
 
 - "Find the in-flight work" is a search across every store, ending in a clear negative with the evidence list. A thorough negative lets the user decide to restart instead of waiting for work that was never saved.
 - Run doc writing and code simplification in separate worktrees, and constrain the simplifier to byte-identical output and an unchanged config schema, so the README written in parallel stays true.
+
+## 2026-11-13
+
+- Spike before planning when the design rests on terminal behaviour: 20 minutes of live screenshots overturned three design assumptions (codepoint range, glyph width, escape syntax).
+- Test a font change in a fresh process and in the long-running one; they can disagree, and only the fresh one tells you about the font.
+- To screenshot a terminal without disturbing the user: open your own window by AppleScript, capture it by window id with `screencapture -l`, close it by the same id.
+- Check a private-use range against the fonts already on the machine before choosing it; "private" ranges are shared by convention only.

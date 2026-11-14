@@ -1,5 +1,14 @@
 # SESSION LOG (newest first)
 
+## 2026-11-13 — radial indicators: research, design, spike (session a8831aae, largo)
+
+- User asked whether the heat-map bars could be radial rings in 3.6° steps with continuous hue. Research (web, GitHub, Context7 lookup, current to 2026-11-13): no stock glyph set is finer than 8 steps (`○◔◑◕●`, Nerd Font `nf-md-circle_slice_1..8` U+F0A9E–F0AA5, filled pies). Claude Code drops image escapes from status line stdout (anthropics/claude-code#101955, #39024 open).
+- User's terminals: iTerm2 and Windows Terminal. Neither draws kitty placeholder images, leaving a custom font as the one route. User approved the short design.
+- Repo indexed in codemunch as `zautke/claude-statusline`. Touch points: `bar()` `scripts/statusline-command.sh:152`, `heat_rgb` `:147`, `Get-Bar` / `Get-FitBar` `scripts/statusline-command.ps1:257` / `:285`.
+- Worktree `~/claude-statusline-wt/radial`, branch `feat/radial-indicators` off `development` `d78076e`; design doc committed and pushed; draft PR #17.
+- Spike: 101-glyph font built with fontTools (29 KB), installed to `~/Library/Fonts`. Terminal.app (fresh process) drew the rings. iTerm2 drew SF Symbols at U+100000, then `[?]` boxes at U+FFF00; a stale font list in the long-running iTerm2 is suspected. Stopped for the user to restart iTerm2. Windows Terminal not tested (no PowerShell tool in the session).
+- Cleanup: test iTerm2 windows closed, Terminal.app quit. Spike font left installed on purpose.
+
 ## 2026-11-09 — in-flight search, public-release teams (session a5493e17, largo)
 
 - User reported in-flight public-release work lost to a machine crash. Searched: local and remote branches, worktrees and stashes on both hosts (adagio old clone `C:\Users\me\dev\braisenly-statusline`, marketplace clones), all 14 PRs, GitHub events/releases, kb, prompt history on both hosts, every Claude Code transcript (user messages, subagents included), Codex sessions on both hosts. Nothing found. adagio rebooted 2026-11-07 22:12; largo up 4 days; the 11-09 12:05 "machine crash" was sessions dying, not a reboot.
