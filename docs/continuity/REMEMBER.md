@@ -46,3 +46,16 @@
 - iTerm2 "Special Exceptions" (codepoint range → font) is only offered when the profile's non-ASCII font switch is on; the user's profiles have it off (`Normal Font` = `VictorMonoNFM-Regular 13`).
 - A window opened by `osascript … create window with default profile command` runs macOS `/bin/bash` 3.2 for `#!/usr/bin/env bash`; `printf '\U…'` prints literally there.
 - largo had 2.1 GiB free on 2026-11-13.
+
+## 2026-11-14
+
+- **Correction to 2026-11-13:** a newly installed font loads in an already-running iTerm2; no restart is needed. The earlier boxes came from the missing PostScript name and, by inference from two incidents, from printing the codepoints before macOS had registered the font: iTerm2 appears to cache a failed glyph lookup per codepoint until it restarts. Install, wait ~5 s, then print. A dedicated test is still owed.
+- iTerm2 3.7.7 draws a COLR/CPAL colour-font glyph at a non-emoji codepoint as a coverage mask in the SGR foreground: palette alpha becomes opacity, palette RGB is discarded, and the glyph is scaled into one cell.
+- iTerm2 draws glyph overflow into the neighbouring cell on both sides and does not repaint a cell's background over a neighbour's overflow. Draw order between overlapping glyphs is undefined.
+- Claude Code 2.1.325 keeps per-character SGR colours for adjacent private-use codepoints, counts each as one cell, and keeps one as the first or last character of a status line row.
+- Grey track rule: background luminance `Yb` (WCAG); `Yg = 1.75 (Yb + 0.05) − 0.05` when `Yb < 0.179`, else `(Yb + 0.05)/1.75 − 0.05`; convert back through the sRGB transfer function; grey channel value for the user's background (14, 42, 53) is 76.
+- The user's iTerm2 background measures (14, 42, 53) from a screenshot. The same hex set through the iTerm2 Python API measured (21, 41, 52). Read backgrounds from the terminal or a pixel.
+- iTerm2 Python API on largo: `EnableAPIServer = 1`, `~/Library/Application Support/iTerm2/disable-automation-auth` present; `uv run --with iterm2` connects with no prompt. `Window.async_create(profile_customizations=LocalWriteOnlyProfile)` themes one window without a saved profile; it cannot be combined with `command`, send the command as text after ~6 s.
+- Private-use blocks used by lab fonts: U+FFA00–FFAE4 (Lab3, good), U+FFB00–FFBE4 (boxes in the iTerm2 process of 2026-11-14), U+FFC00–FFCE4 (Lab2), U+FFD00–FFEE4 (Lab1), U+FFF00–FFF64 (spike).
+- Terminal.app's login shell on largo takes more than 20 s to reach a command passed by `do script`; unsuitable as a quick control.
+- `pkill -f "settings <full path>"` can miss the throwaway Claude process; match on the settings file name and confirm with `pgrep`.

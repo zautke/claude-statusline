@@ -30,3 +30,13 @@
 - Test a font change in a fresh process and in the long-running one; they can disagree, and only the fresh one tells you about the font.
 - To screenshot a terminal without disturbing the user: open your own window by AppleScript, capture it by window id with `screencapture -l`, close it by the same id.
 - Check a private-use range against the fonts already on the machine before choosing it; "private" ranges are shared by convention only.
+
+## 2026-11-14
+
+- Write the prediction before the run. Three of five experiments contradicted a prediction, and the written prediction is what turned each surprise into a finding instead of a shrug.
+- When two glyphs must share a picture, make them tile instead of stack. Removing the overlap removed the dependency on renderer draw order.
+- Ask what is a pure function of what. The track colour needed only the background luminance, which collapsed a theme-matching problem into one closed-form number.
+- A run that fails for a procedural reason is logged as a fault with its cause, then repeated on clean state (fresh codepoints); it is not counted as a result.
+- Put several questions into one laboratory font (control block plus variants) so a single run separates "font not found" from "feature not supported".
+- Measure pixels. "Looks grey-green" became "foreground at 35 % opacity, exactly" only after reading the values.
+- A plan written before a requirement lands goes stale at once; mark it stale in the state file the same day so nobody executes it.

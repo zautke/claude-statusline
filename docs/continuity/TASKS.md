@@ -66,12 +66,18 @@
 ## Radial indicators (2026-11-13 →)
 
 - [x] Research stock glyph options and Claude Code's image-escape handling
-- [x] Short design approved; design doc committed; draft PR #17
-- [x] Spike font (101 rings) built; renders in a fresh Terminal.app
-- [ ] User restarts iTerm2; rerun the ring demo there and screenshot
-- [ ] Update the design doc: U+FFF00 range, PostScript name, raw UTF-8 bytes, one-cell width finding
-- [ ] Test Windows Terminal on adagio (PowerShell tool required; check whether `font.face` needs the ring font listed)
-- [ ] Test ring codepoints inside the real Claude Code status line (cell width, truncation)
-- [ ] Glyph geometry: fill the cell height, heavier stroke; decide one or two cells
-- [ ] Implementation plan, then build
-- [ ] Remove the spike font from `~/Library/Fonts` once the real installer replaces it
+- [x] First design approved; design doc committed; draft PR #17
+- [x] Spike font renders in iTerm2 (after restart) and in a real Claude Code status line
+- [x] Implementation plan written (`756a397`) — stale since the track requirement; do not execute as written
+- [x] kb laboratory ledger started, foreground approach transcribed
+- [x] E-001 colour font (refuted), E-002 overprint (partial), E-003 tiled two-cell ring (confirmed), E-004 in the status line (confirmed)
+- [x] E-005 grey track by contrast ratio on six themes via the iTerm2 Python API (confirmed); default ratio 1.75
+- [ ] E-006: background discovery (OSC 11 from a shell, iTerm2 API/profile, Windows Terminal settings, screenshot pixel)
+- [ ] Dedicated test of the "codepoint shown before font registration stays a box" inference
+- [ ] Windows Terminal on adagio: font fallback, cross-cell overflow, colours (PowerShell tool required)
+- [ ] `NO_COLOR` form of the ring
+- [ ] 1 px step where the two halves meet at the cell boundary
+- [ ] Revise design doc and implementation plan from the ledger (two codepoints, 202 glyphs, grey rule, no trailing space)
+- [ ] User chooses the execution method for the revised plan; build
+- [ ] Draft the agentic configuration skill from the ledger once the method holds across terminals
+- [ ] Remove spike and lab fonts from `~/Library/Fonts` once the real installer replaces them

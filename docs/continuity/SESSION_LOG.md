@@ -1,5 +1,19 @@
 # SESSION LOG (newest first)
 
+## 2026-11-14 — radial indicators: spike closed, laboratory loop E-001…E-005 (session a8831aae, largo)
+
+- User restarted iTerm2. Rings rendered there and inside a throwaway Claude Code 2.1.325 status line. Design doc updated (`1b46716`), implementation plan written (`756a397`); user was asked to choose an execution method and did not; the plan is now stale.
+- New requirement from the user: a full-circle neutral "empty" track behind the coloured arc, 10–15 % lighter or darker than the terminal background. User asked for a kb laboratory ledger with a transcript of the foreground approach and a propose-log-observe-log loop; wider goal is an agentic configuration skill for the public release.
+- Ledger created in kb: `projects/claude-statusline/laboratory/claude-statusline-radial-indicators-laboratory-ledger-append-only`.
+- E-001 colour font (COLR + CPAL): REFUTED. iTerm2 keeps alpha, discards palette colours; the track became the arc hue at 35 % opacity. Also showed that a new font loads in the running iTerm2.
+- E-002 two-cell overprint: PARTIAL. Cross-cell overflow works both ways; draw order between overlapping glyphs is undefined (track covered the arc at 25, 99, 100 %).
+- E-003 tiled remainder + arc: CONFIRMED. First run was a procedure fault (codepoints printed < 1 s after install → boxes).
+- E-004 the same inside the Claude Code status line: CONFIRMED.
+- User asked whether the iTerm2 Python API can drive themes autonomously (yes: `EnableAPIServer = 1`, automation auth disabled) and proposed a plain-grey track from a contrast-ratio formula. User delegated the neutral choice to the agent.
+- E-005 grey track by WCAG ratio on six themes through the iTerm2 API: CONFIRMED. Default ratio 1.75 chosen.
+- Lab code and evidence pushed: `43ba911`, `e56988c` on `feat/radial-indicators`.
+- Cleanup: all test windows closed, throwaway Claude processes stopped (one needed a second `pkill` pattern), Terminal.app quit. Four ring fonts left installed on purpose.
+
 ## 2026-11-13 — radial indicators: research, design, spike (session a8831aae, largo)
 
 - User asked whether the heat-map bars could be radial rings in 3.6° steps with continuous hue. Research (web, GitHub, Context7 lookup, current to 2026-11-13): no stock glyph set is finer than 8 steps (`○◔◑◕●`, Nerd Font `nf-md-circle_slice_1..8` U+F0A9E–F0AA5, filled pies). Claude Code drops image escapes from status line stdout (anthropics/claude-code#101955, #39024 open).
