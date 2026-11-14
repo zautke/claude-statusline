@@ -13,6 +13,7 @@
 - E-005 grey track by WCAG ratio on six themes through the iTerm2 API: CONFIRMED. Default ratio 1.75 chosen.
 - Lab code and evidence pushed: `43ba911`, `e56988c` on `feat/radial-indicators`.
 - Cleanup: all test windows closed, throwaway Claude processes stopped (one needed a second `pkill` pattern), Terminal.app quit. Four ring fonts left installed on purpose.
+- Later the same day: teaching retrospective written to kb; Windows Terminal desk analysis and experiments W-001…W-004 logged; E-007 (combining-mark overlay, from a user question) logged as a proposal; half-glyph fonts Lab4a/b/c built and committed with Lab3 under `lab/radial/fonts/`; standing handoff order for adagio placed at the top of `CURRENT_TASK_STATE.md`.
 
 ## 2026-11-13 — radial indicators: research, design, spike (session a8831aae, largo)
 

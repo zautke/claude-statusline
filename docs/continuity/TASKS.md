@@ -74,7 +74,8 @@
 - [x] E-005 grey track by contrast ratio on six themes via the iTerm2 Python API (confirmed); default ratio 1.75
 - [ ] E-006: background discovery (OSC 11 from a shell, iTerm2 API/profile, Windows Terminal settings, screenshot pixel)
 - [ ] Dedicated test of the "codepoint shown before font registration stays a box" inference
-- [ ] Windows Terminal on adagio: font fallback, cross-cell overflow, colours (PowerShell tool required)
+- [ ] Windows Terminal on adagio: W-001…W-004 per the standing handoff order in `CURRENT_TASK_STATE.md` (PowerShell tool required; fonts prebuilt in `lab/radial/fonts/`)
+- [ ] E-007: combining-mark overlay, one run (proposal in the ledger)
 - [ ] `NO_COLOR` form of the ring
 - [ ] 1 px step where the two halves meet at the cell boundary
 - [ ] Revise design doc and implementation plan from the ledger (two codepoints, 202 glyphs, grey rule, no trailing space)
