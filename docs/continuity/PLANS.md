@@ -52,8 +52,9 @@ A Claude Code status line (bash + PowerShell) that fits any terminal width while
 | R1. Feasibility research and first design (single-glyph ring, no track) | done 2026-11-13; **superseded** by the track requirement | PR #17, `docs/superpowers/specs/2026-11-13-radial-indicators-design.md` |
 | R2. Spike: foreground ring in iTerm2 and the real status line | done 2026-11-14 | kb ledger Part A |
 | R3. Laboratory: neutral empty track + coloured fill, theme-independent | in progress; E-001…E-005 done, mechanism and grey rule confirmed on iTerm2, six themes | kb `projects/claude-statusline/laboratory/claude-statusline-radial-indicators-laboratory-ledger-append-only`; `lab/radial/` at `e56988c` |
-| R4. Background discovery (E-006), Windows Terminal, `NO_COLOR` form, cell-boundary step | not started | |
+| R3b. Live trial in the user's status line; cell-fitted ring with notches (E-008); gradient along the arc tried and rejected (E-009) | done 2026-11-15; user approved the solid-colour ring | `f6bc23f` on `feat/radial-indicators`; kb ledger L-001, E-008, E-009 |
+| R4. Background discovery (E-006), cell-geometry input, Windows Terminal, ssh sessions, `NO_COLOR` form | not started | |
 | R5. Revise design doc and plan from the ledger; build (`style: bar \| ring`, 202-glyph font, grey rule, installers, tests, README) | not started; the plan of 2026-11-14 (`756a397`) is stale | |
 | R6. Agentic configuration skill packaged with the public release | not started; depends on R3–R4 | user goal 2026-11-14 |
 
-Current facts: two codepoints per ring in two cells (remainder in neutral grey, arc in `heat_rgb`), no overlap; grey from the WCAG contrast-ratio formula at ratio 1.75 against the background; default style stays `bar`. Non-goals: pixel-graphics protocols; colour fonts (iTerm2 discards their colours); anything that depends on glyph draw order.
+Current facts: two codepoints per ring in two cells (remainder in neutral grey, arc in `heat_rgb`), no overlap, notches at arc start and tip; the font must match the terminal font's cell width; grey from the WCAG contrast-ratio formula at ratio 1.75 against the background; default style stays `bar`. Non-goals: pixel-graphics protocols; colour fonts (iTerm2 discards their colours); anything that depends on glyph draw order; a dithered gradient along the arc (rejected by the user 2026-11-15).

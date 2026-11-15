@@ -59,3 +59,13 @@
 - Private-use blocks used by lab fonts: U+FFA00–FFAE4 (Lab3, good), U+FFB00–FFBE4 (boxes in the iTerm2 process of 2026-11-14), U+FFC00–FFCE4 (Lab2), U+FFD00–FFEE4 (Lab1), U+FFF00–FFF64 (spike).
 - Terminal.app's login shell on largo takes more than 20 s to reach a command passed by `do script`; unsuitable as a quick control.
 - `pkill -f "settings <full path>"` can miss the throwaway Claude process; match on the settings file name and confirm with `pgrep`.
+
+## 2026-11-15
+
+- **Correction to 2026-11-14 (E-003 "1 px step"):** the step was a wrong cell width, not pixel snapping. The remainder glyph's circle centre must equal the terminal font's cell width per 1000 em (Victor Mono Nerd Font Mono: unitsPerEm 1100, advance 600 → 545.5; line height 1409, cell centre 386 above the baseline). The arc glyph, anchored at its own cell's left edge, does not depend on it.
+- The user's live status line on largo runs from the `radial` worktree through the symlink `~/claude-statusline-wt/claude-statusline`. Deleting either breaks it. Backups: `~/.claude/settings.json.bak-pre-ring-2026-11-14`, `~/.claude/statusline.json.bak-pre-ring-2026-11-14`.
+- The resize watcher only bumps a `statusLine.command` matching `(claude|braisenly)-statusline/scripts/statusline-(dispatcher|command|launch).(sh|ps1)`.
+- The renderer reads the invoking Claude session's pty width and ignores `COLUMNS` unless `CLAUDE_STATUSLINE_NO_LIVE_COLS=1` is set; width tests run from inside a Claude session need it.
+- iTerm2 draws a fallback glyph wherever its ink lies, at least three cells left or right of its own cell.
+- `tests/test-statusline.sh` reads live disk free space; a run can fail one ladder case when free space crosses a unit boundary mid-run.
+- At the red end of the heat ramp the arc (181, 4, 0) and a grey-76 track have almost the same luminance; the notch, not the colour, makes the tip readable.

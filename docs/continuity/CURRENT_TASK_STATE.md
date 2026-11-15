@@ -1,6 +1,6 @@
 # CURRENT TASK STATE
 
-Updated 2026-11-14 ~12:35 MST (session a8831aae, largo, claude-fable-5-2). Two open threads.
+Updated 2026-11-15 ~11:50 MST (session a8831aae, largo, claude-fable-5-2). Two open threads.
 
 > ## ⛔ STANDING HANDOFF ORDER — if this session runs on **adagio** (Windows), do this first
 >
@@ -17,7 +17,8 @@ Updated 2026-11-14 ~12:35 MST (session a8831aae, largo, claude-fable-5-2). Two o
 >
 > | Font file | Family | Codepoints (p = 0..100) | For |
 > |---|---|---|---|
-> | `StatuslineRingsLab3.ttf` | Statusline Rings Lab3 | remainder U+FFA00 + p, arc U+FFA80 + p (both overhang into the neighbour cell) | W-002, the iTerm2 method as is |
+> | `StatuslineRingsLab3.ttf` | Statusline Rings Lab3 | remainder U+FFA00 + p, arc U+FFA80 + p (both overhang into the neighbour cell; built for a 600-unit cell) | W-002, the iTerm2 method as is |
+> | `StatuslineRingsLab5.ttf` | Statusline Rings Lab5 | remainder U+FF000 + p, arc U+FF080 + p; cell 545 (Victor Mono), larger ring, notches. The font the bash renderer currently emits | W-002 if the Windows Terminal font has a ~545-unit cell; otherwise rebuild with `mklab2.py -x <cell>` |
 > | `StatuslineRingsLab4a.ttf` | Statusline Rings Lab4a | mono halves: left U+FF600 + p, right U+FF680 + p. Colour halves: left U+FF800 + p, right U+FF880 + p. Track grey 128 at alpha 0.35 | W-001 (mono), W-003 (colour, translucent track) |
 > | `StatuslineRingsLab4b.ttf` | Statusline Rings Lab4b | mono left U+FF400 + p, right U+FF480 + p; colour left U+FF500 + p, right U+FF580 + p. Track opaque grey 60 | W-003 on a dark background |
 > | `StatuslineRingsLab4c.ttf` | Statusline Rings Lab4c | mono left U+FF200 + p, right U+FF280 + p; colour left U+FF300 + p, right U+FF380 + p. Track opaque grey 190 | W-003 on a light background |
@@ -34,22 +35,21 @@ Updated 2026-11-14 ~12:35 MST (session a8831aae, largo, claude-fable-5-2). Two o
 >
 > **Finish:** screenshots into `lab/radial/evidence/` (prefix `w`), commit and push to `feat/radial-indicators`, update the ledger's standing summary with a Windows column, refresh this continuity set (remove this order once W-001…W-004 are logged), tell the user which mechanism the product should use on Windows.
 
-## Thread A (active): radial percentage indicators — laboratory phase
+## Thread A (active): radial percentage indicators — laboratory phase, live trial running
 
-**State:** ring with a neutral empty track and a heat-coloured fill works in iTerm2 and inside a real Claude Code status line, on six themes. Work runs as a propose → log → observe → log loop in the kb laboratory ledger. **Next experiment: E-006, how the configuration step learns the terminal background.**
+**State (2026-11-15):** the solid-colour ring with a neutral grey track is live in the user's own status line on largo and the user approved its look. Experiments E-001…E-009 and live trial L-001 are in the kb ledger. **Next: E-006 (how the configuration step learns the background) and the cell-geometry input; the Windows round is the standing order above.**
 
-- **Ledger (source of truth for all experiments):** kb `projects/claude-statusline/laboratory/claude-statusline-radial-indicators-laboratory-ledger-append-only`. Holds the foreground transcript (Part A), E-001…E-005 with predictions and measured results, the mechanism table, six procedure rules, and draft v1 of the configuration rule. Append a proposal before every run and an observation after it.
-- **Winning mechanism (M7-tiled):** each ring is two codepoints in two neighbouring cells. First: the unfilled remainder of the ring, SGR foreground = neutral grey. Second: the filled arc, SGR foreground = `heat_rgb(p)`. The shapes tile and never overlap. 202 glyphs. Lab font `StatuslineRingsLab3.ttf`: remainders U+FFA00 + p, arcs U+FFA80 + p, advance 600, circle centres x = 600 and x = 0, y = 300, radii 540 / 330.
-- **Neutral colour:** pure grey from the WCAG contrast-ratio formula against the background luminance (`lab/radial/grey.py`), lighter when background luminance < 0.179, darker otherwise. Default ratio **1.75** (agent's call, delegated by the user), useful range 1.5–2.5.
-- **User's wider goal:** the public release gets an agentic live-configuration skill that adapts the track to the user's terminal theme; the ledger is its source material.
-- Worktree `~/claude-statusline-wt/radial`, branch `feat/radial-indicators`, draft PR #17, head `e56988c`. Lab code and evidence in `lab/radial/` (`mklab.py`, `mklab2.py`, `demo.sh`, `demo2.sh`, `sl-ring.sh`, `grey.py`, `themes.py`, `evidence/`). Built `.ttf` files are git-ignored there.
-- **Stale documents, not yet revised:** `docs/superpowers/specs/2026-11-13-radial-indicators-design.md` and `docs/superpowers/plans/2026-11-14-radial-indicators.md` describe a single-glyph ring with no track. Do not execute that plan as written. No execution method was chosen for it.
-- Installed on largo, kept on purpose: `~/Library/Fonts/StatuslineRings.ttf`, `StatuslineRingsLab1.ttf`, `Lab2`, `Lab3`.
-- Not tested: Windows Terminal on adagio (needs a session with the PowerShell tool); `NO_COLOR` form of the ring.
+- **Ledger (source of truth):** kb `projects/claude-statusline/laboratory/claude-statusline-radial-indicators-laboratory-ledger-append-only`. Append a proposal before every run and an observation after it. Related kb notes: the teaching retrospective of 2026-11-14 and "Remote sessions (ssh from iTerm2 into adagio) - which rules apply and in what order".
+- **Current mechanism:** two code points in two cells. Remainder (unfilled part) U+FF000 + p in grey, arc U+FF080 + p in `heat_rgb(p)`; the shapes tile; a 9° background notch at the arc start and tip marks the fill boundary. Font `StatuslineRingsLab5.ttf` (`mklab2.py --tile -x 545 -y 386 -u 615 -i 346 -v -9`).
+- **Two per-user inputs the product needs:** (1) terminal background → grey by the WCAG contrast-ratio rule, ratio 1.75 (`lab/radial/grey.py`); (2) **cell geometry of the terminal font**: remainder centre x = advance/unitsPerEm × 1000 (545 for Victor Mono), centre y = ascent − line height/2 (386). A font built for another cell width is off by pixels.
+- **Renderer:** `scripts/statusline-command.sh` on `feat/radial-indicators` has `style: "bar" | "ring"` and `ring.grey` (default 76); with `ring` the fit ladder is walked with rings kept and they drop last. Laboratory wiring: lab code points, stored grey. PowerShell renderer untouched. Head `f6bc23f`, draft PR #17.
+- **Rejected by the user:** gradient along the arc by dithered four-cell tiling (E-009). Do not re-wire a visual variant into the live renderer without showing a mock-up first.
+- **Live trial on largo (user's real config, keep unless told otherwise):** `~/.claude/settings.json` `statusLine.command` = `bash /Users/derp/claude-statusline-wt/claude-statusline/scripts/statusline-dispatcher.sh` (symlink `~/claude-statusline-wt/claude-statusline` → `radial`, so the resize watcher recognises the path); `~/.claude/statusline.json` has `"style": "ring", "ring": {"grey": 76}`. Revert: copy `~/.claude/settings.json.bak-pre-ring-2026-11-14` and `~/.claude/statusline.json.bak-pre-ring-2026-11-14` back. **Removing the `radial` worktree or the symlink breaks the user's status line.**
+- Installed on largo: `~/Library/Fonts/StatuslineRings.ttf`, `Lab1`…`Lab6`. Only Lab5 is in use.
+- **Stale documents:** `docs/superpowers/specs/2026-11-13-radial-indicators-design.md` and `docs/superpowers/plans/2026-11-14-radial-indicators.md` describe a single-glyph ring with no track. Do not execute that plan.
+- Not tested: Windows Terminal, ssh sessions (S-001…S-004), `NO_COLOR` form, combining marks (E-007), other terminal fonts and sizes.
 
-**Next:** log the E-006 proposal in the ledger, then run it: OSC 11 query from an ordinary shell, and the iTerm2 Python API / profile route; compare each with a screenshot pixel. After that: Windows Terminal, the 1 px step at the cell boundary, `NO_COLOR`, then revise the design doc and plan from the ledger.
-
-**How to run a lab round:** `cd ~/claude-statusline-wt/radial/lab/radial`; fonts `uv run -q --with fonttools python mklab2.py -o X.ttf -n LabN -t <hex> -r <hex> --tile`, copy to `~/Library/Fonts`, **wait 5 s**, use a fresh private-use block; themes `uv run -q --with iterm2 python themes.py -o evidence`; measure with Pillow (`evidence/blobs.py`).
+**How to run a lab round:** `cd ~/claude-statusline-wt/radial/lab/radial`; build with `uv run -q --with fonttools python mklab2.py …`, copy to `~/Library/Fonts`, **wait 5 s**, use a fresh private-use block; themes `uv run -q --with iterm2 python themes.py -o evidence`; measure with Pillow; renderer tests need `CLAUDE_STATUSLINE_NO_LIVE_COLS=1`.
 
 ## Thread B (paused since 2026-11-09): public release
 

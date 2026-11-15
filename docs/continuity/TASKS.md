@@ -72,12 +72,14 @@
 - [x] kb laboratory ledger started, foreground approach transcribed
 - [x] E-001 colour font (refuted), E-002 overprint (partial), E-003 tiled two-cell ring (confirmed), E-004 in the status line (confirmed)
 - [x] E-005 grey track by contrast ratio on six themes via the iTerm2 Python API (confirmed); default ratio 1.75
+- [x] L-001 live trial in the user's status line; E-008 cell-fitted ring with notches, rings kept through the ladder (user approved the look 2026-11-15)
+- [x] E-009 gradient along the arc: built, rejected by the user, reverted
+- [ ] Cell-geometry input: decide between building the font at configuration time, shipping cell-width variants, or a design independent of cell width
 - [ ] E-006: background discovery (OSC 11 from a shell, iTerm2 API/profile, Windows Terminal settings, screenshot pixel)
 - [ ] Dedicated test of the "codepoint shown before font registration stays a box" inference
 - [ ] Windows Terminal on adagio: W-001…W-004 per the standing handoff order in `CURRENT_TASK_STATE.md` (PowerShell tool required; fonts prebuilt in `lab/radial/fonts/`)
 - [ ] E-007: combining-mark overlay, one run (proposal in the ledger)
 - [ ] `NO_COLOR` form of the ring
-- [ ] 1 px step where the two halves meet at the cell boundary
 - [ ] Revise design doc and implementation plan from the ledger (two codepoints, 202 glyphs, grey rule, no trailing space)
 - [ ] User chooses the execution method for the revised plan; build
 - [ ] Draft the agentic configuration skill from the ledger once the method holds across terminals

@@ -40,3 +40,11 @@
 - Put several questions into one laboratory font (control block plus variants) so a single run separates "font not found" from "feature not supported".
 - Measure pixels. "Looks grey-green" became "foreground at 35 % opacity, exactly" only after reading the values.
 - A plan written before a requirement lands goes stale at once; mark it stale in the state file the same day so nobody executes it.
+
+## 2026-11-15
+
+- Show a mock-up before wiring a visual variant into something the user looks at all day. The gradient met every prediction and was rejected in one glance; a demo screenshot and a question would have cost one message.
+- When a small error is "about a pixel", compute it before blaming rounding. 55 font units at 13 pt on a 2× display is 1.4 px: the assumption was wrong, not the rasteriser.
+- Do not let a distinction rest on colour alone when luminances are close; add a shape cue (here a gap).
+- An indicator's place in a degradation order follows its cost: bars are wide and go first, two-cell rings are cheap and go last.
+- Temporary wiring into a user's live config needs a backup, a written revert, and a note in the state file about what must not be deleted.

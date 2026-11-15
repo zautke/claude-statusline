@@ -1,5 +1,14 @@
 # SESSION LOG (newest first)
 
+## 2026-11-14 evening → 2026-11-15 — live trial, cell-fitted ring, gradient tried and rejected (session a8831aae, largo)
+
+- Remote-session analysis (ssh from iTerm2 into adagio) written to kb; experiments S-001…S-004 proposed.
+- L-001: ring wired into the bash renderer (`style: ring`, `ring.grey`) and the user's status line pointed at the worktree; backups `~/.claude/*.bak-pre-ring-2026-11-14`.
+- User feedback: blurry, 1 px misfit, 95 % and 82 % alike, want it bigger, exclusion ladder broken. E-008: the misfit was a wrong cell-width assumption (600 vs 545.5 for Victor Mono); font refitted (Lab5), ring enlarged, notches added, ladder walks with rings kept, command path routed through a `claude-statusline` symlink so the resize watcher runs. Commit `e96960b`.
+- E-009: continuous hue along the arc by dithered four-cell tiling. Technically confirmed (`8fec0e3`), rejected by the user on sight; renderer reverted to the solid-colour ring (`f6bc23f`), which the user approved.
+- A built-in safety check blocked one verification command (suspected hidden removal; none intended); the checks were rerun as separate commands.
+- largo disk fell to 0.5–2 GiB free during the session; one test run failed once on live "disk free" text and passed on rerun.
+
 ## 2026-11-14 — radial indicators: spike closed, laboratory loop E-001…E-005 (session a8831aae, largo)
 
 - User restarted iTerm2. Rings rendered there and inside a throwaway Claude Code 2.1.325 status line. Design doc updated (`1b46716`), implementation plan written (`756a397`); user was asked to choose an execution method and did not; the plan is now stale.
