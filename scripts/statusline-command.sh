@@ -61,8 +61,8 @@ refresh_seconds=$(get_cfg '.fable.refresh_seconds' '600')
 max_stale=$(get_cfg '.fable.max_stale_seconds' '86400')
 fable_model=$(get_cfg '.fable.model' '"Fable"')
 fit_reserve=$(get_cfg '.fit.reserve' '0')
-# Indicator style: bar | ring. A ring is two code points in two cells (laboratory font Statusline Rings Lab3): the
-# unfilled remainder at U+FFA00+p in a neutral grey, then the filled arc at U+FFA80+p in the heat colour.
+# Indicator style: bar | ring. A ring is two code points in two cells (laboratory font Statusline Rings Lab5): the
+# unfilled remainder at U+FF000+p in a neutral grey, then the filled arc at U+FF080+p in the heat colour.
 # ponytail: lab code points and a stored grey; the release font's block and a grey computed from the terminal
 # background replace both (kb: claude-statusline radial indicators laboratory ledger).
 indicator_style=$(get_cfg '.style' '"bar"'); ring_grey=$(get_cfg '.ring.grey' '76')
@@ -169,9 +169,9 @@ bar() { # sets BAR; empty when bars are off. No subshells: this runs inside the 
   ((pct<0))&&pct=0; ((pct>100))&&pct=100
   if [[ $indicator_style == ring ]]; then
     local h3 h4 rem arc
-    # UTF-8 of U+FFA00+n is F3 BF (A8 + n/64) (80 + n%64); printf \x works in Bash 3.2, \U does not.
-    printf -v h3 '%02X' $((0xA8+pct/64)); printf -v h4 '%02X' $((0x80+pct%64)); printf -v rem "\\xF3\\xBF\\x$h3\\x$h4"
-    printf -v h3 '%02X' $((0xA8+(128+pct)/64)); printf -v h4 '%02X' $((0x80+(128+pct)%64)); printf -v arc "\\xF3\\xBF\\x$h3\\x$h4"
+    # UTF-8 of U+FF000+n is F3 BF (80 + n/64) (80 + n%64); printf \x works in Bash 3.2, \U does not.
+    printf -v h3 '%02X' $((0x80+pct/64)); printf -v h4 '%02X' $((0x80+pct%64)); printf -v rem "\\xF3\\xBF\\x$h3\\x$h4"
+    printf -v h3 '%02X' $((0x80+(128+pct)/64)); printf -v h4 '%02X' $((0x80+(128+pct)%64)); printf -v arc "\\xF3\\xBF\\x$h3\\x$h4"
     if [[ -n ${NO_COLOR:-} ]]; then BAR=$rem$arc; return; fi
     heat_rgb "$pct"; printf -v BAR '\033[38;2;%d;%d;%dm%s\033[38;2;%d;%d;%dm%s%s' "$ring_grey" "$ring_grey" "$ring_grey" "$rem" "$r" "$g" "$b" "$arc" "$reset"
     return
@@ -355,6 +355,12 @@ shrink_layout() { # $1 = flat|stacked. Sets scale and rows on success.
   [[ -n $best ]]||{ scale_num=1 scale_den=1; return 1; }
   scale_num=$best; build; "assemble_$1"; return 0
 }
+# Rings do not shrink and cost two cells each, so they are the last thing to give up: walk the whole ladder with
+# rings on before falling through to the stages that drop the indicators.
+if [[ $indicator_style == ring ]]; then
+  for step in $ladder; do F+="$step "; try_layouts&&{ pad_rows; emit; }; done
+  F=" "; total=0
+fi
 if ((total>0)); then
   shrink_layout flat&&{ pad_rows; emit; }
   ((fit_rows>=2))&&shrink_layout stacked&&{ pad_rows; emit; }

@@ -11,7 +11,7 @@ T=$(u8 $((16#$track)))
 IFS=, read -r -a N <<<"$neutrals"
 for n in "${N[@]}"; do
   printf '%-12s ' "$n"
-  for p in 0 1 7 25 48 50 77 89 99 100; do
+  for p in ${DEMO_P:-0 1 7 25 48 50 77 89 99 100}; do
     if ((p<=50)); then r=$((40+180*p/50)) g=$((170-10*p/50)) b=$((60-60*p/50)); else r=$((220-40*(p-50)/50)) g=$((160-160*(p-50)/50)) b=0; fi
     ((tile)) && T=$(u8 $((16#$track + p)))
     printf '\e[38;2;%sm%s\e[38;2;%d;%d;%dm%s\e[39m%s %3d%%   ' "$n" "$T" "$r" "$g" "$b" "$(u8 $((16#$arcs + p)))" "${fgc:+$(printf '\e[38;2;%sm' "$fgc")}" "$p"
