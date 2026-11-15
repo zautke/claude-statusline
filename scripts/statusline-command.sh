@@ -61,11 +61,13 @@ refresh_seconds=$(get_cfg '.fable.refresh_seconds' '600')
 max_stale=$(get_cfg '.fable.max_stale_seconds' '86400')
 fable_model=$(get_cfg '.fable.model' '"Fable"')
 fit_reserve=$(get_cfg '.fit.reserve' '0')
-# Indicator style: bar | ring. A ring is two code points in two cells (laboratory font Statusline Rings Lab5): the
-# unfilled remainder at U+FF000+p in a neutral grey, then the filled arc at U+FF080+p in the heat colour.
+# Indicator style: bar | ring. A ring is (laboratory font Statusline Rings Lab6): four code points in four
+# cells, the unfilled remainder in a neutral grey and the filled arc as green, amber and red slices (U+FEC00 block).
+# The ring's outer two cells are visually empty and stand in for the spaces a bar has on either side.
 # ponytail: lab code points and a stored grey; the release font's block and a grey computed from the terminal
 # background replace both (kb: claude-statusline radial indicators laboratory ledger).
 indicator_style=$(get_cfg '.style' '"bar"'); ring_grey=$(get_cfg '.ring.grey' '76')
+bar_sep=' '; [[ $indicator_style == ring ]]&&bar_sep=
 min_bar_cells=$(get_cfg '.fit.min_bar_cells' '5')
 # Reset-time mode: off | clock | countdown. No jq // on .resets: it treats false as absent.
 resets_mode=clock; [[ -n "$cfg" ]]&&resets_mode=$(jq -r 'if .resets==false then "off" else (.resets_format // "clock") end' "$cfg")
@@ -160,6 +162,12 @@ fmt_bytes() { local b=$1 d=${2:-1}; if ((b>=1073741824)); then awk -v b="$b" -v 
 heat_rgb() { local pos=$1 p2; if ((pos<=50)); then r=$((40+180*pos/50)) g=$((170-10*pos/50)) b=$((60-60*pos/50)); else p2=$((pos-50)); r=$((220-40*p2/50)) g=$((160-160*p2/50)) b=0; fi; }
 # The number always carries the heat colour of its bar tip, bar shown or not.
 pct_text() { local p=$1 r g b; heat_rgb "$p"; if [[ -n ${NO_COLOR:-} ]]; then PCT="$p%"; else printf -v PCT '\033[38;2;%d;%d;%dm%d%%%s' "$r" "$g" "$b" "$p" "$reset"; fi; }
+# Ring colours, built once: grey track and the three stops of the heat ramp (0, 50, 100).
+ring_end=$'\033[39m'; ring_sgr=()
+if [[ $indicator_style == ring ]]; then
+  printf -v _s '\033[38;2;%d;%d;%dm' "$ring_grey" "$ring_grey" "$ring_grey"; ring_sgr+=("$_s")
+  for _p in 0 50 100; do heat_rgb "$_p"; printf -v _s '\033[38;2;%d;%d;%dm' "$r" "$g" "$b"; ring_sgr+=("$_s"); done; unset _s _p
+fi
 # Fit state: bars_off=1 drops every bar; scale_num/scale_den shrink configured widths uniformly.
 bars_off=0 scale_num=1 scale_den=1
 bar() { # sets BAR; empty when bars are off. No subshells: this runs inside the fit loop.
@@ -168,12 +176,16 @@ bar() { # sets BAR; empty when bars are off. No subshells: this runs inside the 
   width=$((width*scale_num/scale_den)); ((width<1))&&width=1
   ((pct<0))&&pct=0; ((pct>100))&&pct=100
   if [[ $indicator_style == ring ]]; then
-    local h3 h4 rem arc
-    # UTF-8 of U+FF000+n is F3 BF (80 + n/64) (80 + n%64); printf \x works in Bash 3.2, \U does not.
-    printf -v h3 '%02X' $((0x80+pct/64)); printf -v h4 '%02X' $((0x80+pct%64)); printf -v rem "\\xF3\\xBF\\x$h3\\x$h4"
-    printf -v h3 '%02X' $((0x80+(128+pct)/64)); printf -v h4 '%02X' $((0x80+(128+pct)%64)); printf -v arc "\\xF3\\xBF\\x$h3\\x$h4"
-    if [[ -n ${NO_COLOR:-} ]]; then BAR=$rem$arc; return; fi
-    heat_rgb "$pct"; printf -v BAR '\033[38;2;%d;%d;%dm%s\033[38;2;%d;%d;%dm%s%s' "$ring_grey" "$ring_grey" "$ring_grey" "$rem" "$r" "$g" "$b" "$arc" "$reset"
+    # Four code points in four cells draw one ring: grey remainder, then green, amber and red slices of the filled
+    # arc, interleaved so finely that they read as the heat gradient. Code point = base + k*128 + pct, k = 0..3;
+    # UTF-8 of U+FEC00+n is F3 BE (B0 + n/64) (80 + n%64). printf \x works in Bash 3.2, \U does not.
+    local k n h3 h4 ch; BAR=
+    for k in 0 1 2 3; do
+      n=$((k*128+pct)); printf -v h3 '%02X' $((0xB0+n/64)); printf -v h4 '%02X' $((0x80+n%64)); printf -v ch "\\xF3\\xBE\\x$h3\\x$h4"
+      if [[ -n ${NO_COLOR:-} ]]; then BAR+=$ch; else BAR+=${ring_sgr[k]}$ch; fi
+    done
+    # The ring ends in SGR 39, not the usual reset: assemble_flat reads that as "no space after me".
+    [[ -n ${NO_COLOR:-} ]]||BAR+=$ring_end
     return
   fi
   # Whole cells only: an eighth-block glyph leaves a blank gap before the ░ track.
@@ -282,28 +294,28 @@ build() {
       context)
         [[ $F == *" ctx_label "* ]]||top="$label_color$L_ctx$reset"
         if [[ -n $ctx_pct ]]; then
-          bar "$ctx_pct" "$W_ctx"; top+=${BAR:+${top:+ }$BAR}
+          bar "$ctx_pct" "$W_ctx"; top+=${BAR:+${top:+$bar_sep}$BAR}
           if [[ $F == *" ctx_int "* ]]; then used=$ctx_used0 total=$ctx_total0; else used=$ctx_used1 total=$ctx_total1; fi
           [[ $F == *" ctx_no_used "* ]]||bot="$value_color$used$reset"
           [[ $F == *" ctx_no_total "* ]]||bot+="$value_color${bot:+/}$total$reset"
           pct_paren "$ctx_pct"; bot+=${bot:+ }$P
-        else bar 0 "$W_ctx"; top+=${BAR:+${top:+ }$BAR}; fi ;;
+        else bar 0 "$W_ctx"; top+=${BAR:+${top:+$bar_sep}$BAR}; fi ;;
       disk|tmp)
         if [[ $s == disk ]]; then pct=$disk_pct free1=$disk_free1 free0=$disk_free0 L=$L_disk W=$W_disk; else pct=$tmp_pct free1=$tmp_free1 free0=$tmp_free0 L=$L_tmp W=$W_tmp; fi
         [[ -n $pct ]]||continue
         [[ $F == *" disk_label "* ]]||top="$label_color$L$reset"
-        bar "$pct" "$W"; top+=${BAR:+${top:+ }$BAR}
+        bar "$pct" "$W"; top+=${BAR:+${top:+$bar_sep}$BAR}
         if [[ $F != *" disk_value "* ]]; then if [[ $F == *" disk_int "* ]]; then bot="$value_color$free0$reset"; else bot="$value_color$free1$reset"; fi; [[ $F == *" no_free "* ]]||bot+=" free"; fi ;;
       five_hour)
         [[ -n $five_pct && $F != *" five_segment "* ]]||continue
-        [[ $F == *" five_label "* ]]||top="$label_color$L_five$reset"; bar "$five_pct" "$W_five"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$five_pct"; bot=$P; [[ $F == *" resets "* ]]||bot+=$five_tail ;;
+        [[ $F == *" five_label "* ]]||top="$label_color$L_five$reset"; bar "$five_pct" "$W_five"; top+=${BAR:+${top:+$bar_sep}$BAR}; pct_paren "$five_pct"; bot=$P; [[ $F == *" resets "* ]]||bot+=$five_tail ;;
       seven_day)
         [[ -n $seven_pct && $F != *" seven_segment "* ]]||continue
-        [[ $F == *" seven_label "* ]]||top="$label_color$L_seven$reset"; bar "$seven_pct" "$W_seven"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$seven_pct"; bot=$P; [[ $F == *" resets "* ]]||bot+=$seven_tail ;;
+        [[ $F == *" seven_label "* ]]||top="$label_color$L_seven$reset"; bar "$seven_pct" "$W_seven"; top+=${BAR:+${top:+$bar_sep}$BAR}; pct_paren "$seven_pct"; bot=$P; [[ $F == *" resets "* ]]||bot+=$seven_tail ;;
       fable)
         [[ $F != *" fable_segment "* ]]||continue
         if [[ $F == *" fable_label "* ]]; then :; elif [[ $F == *" fable_short "* ]]; then top="$label_color${L_fable:0:1}$reset"; else top="$label_color$L_fable$reset"; fi
-        if [[ -n $fable_pct ]]; then bar "$fable_pct" "$W_fable"; top+=${BAR:+${top:+ }$BAR}; pct_paren "$fable_pct"; bot=$P; else bar 0 "$W_fable"; top+=${BAR:+${top:+ }$BAR}; paren n/a; bot=$P; fi ;;
+        if [[ -n $fable_pct ]]; then bar "$fable_pct" "$W_fable"; top+=${BAR:+${top:+$bar_sep}$BAR}; pct_paren "$fable_pct"; bot=$P; else bar 0 "$W_fable"; top+=${BAR:+${top:+$bar_sep}$BAR}; paren n/a; bot=$P; fi ;;
     esac
     [[ -n $top$bot ]]||continue
     seg_top+=("$top"); seg_bot+=("$bot")
@@ -313,7 +325,7 @@ build() {
 # Wraps text $2 in link $1 (sets LNK); empty text or no link leaves it bare.
 wrap_link() { LNK=$2; [[ -n $1 && -n $2 ]]&&LNK=$1$2$link_close; }
 # flat: one row, "top bot" per segment. stacked: two rows, each segment padded to max(top,bot) so columns align.
-assemble_flat() { local i part out=; for i in "${!seg_top[@]}"; do part=${seg_top[i]}; [[ -n $part && -n ${seg_bot[i]} ]]&&part+=' '; part+=${seg_bot[i]}; wrap_link "${seg_link[i]}" "$part"; out+=${out:+$sep}$LNK; done; row1=$out row2=; }
+assemble_flat() { local i part out=; for i in "${!seg_top[@]}"; do part=${seg_top[i]}; [[ -n $part && -n ${seg_bot[i]} && $part != *"$ring_end" ]]&&part+=' '; part+=${seg_bot[i]}; wrap_link "${seg_link[i]}" "$part"; out+=${out:+$sep}$LNK; done; row1=$out row2=; }
 assemble_stacked() {
   local i t b wt wb w pad r1= r2=
   for i in "${!seg_top[@]}"; do
