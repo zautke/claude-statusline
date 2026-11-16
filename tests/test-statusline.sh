@@ -179,15 +179,15 @@ want() { [[ $2 == "$3" ]] || { printf 'resets %s: got [%s] want [%s]\n' "$1" "$2
 B5='5h [██░░░░░░░░░░] (20%)' B7='7d [████░░░░░░░░] (30%)' cd_='"resets_format":"countdown"'
 fix=$(rp 1794435180 1794794400)
 want countdown "$(rr "$cd_" "$fix")" "$B5 ↻2h13m ⊟◂ ● $B7 ↻4d6h ⊟◂"
-want clock "$(rr '' "$fix")" "$B5 ↻22:13 ⊟◂ ● $B7 ↻M02 ⊟◂"
-want clock-explicit "$(rr '"resets":true,"resets_format":"clock"' "$fix")" "$B5 ↻22:13 ⊟◂ ● $B7 ↻M02 ⊟◂"
-# Day codes: Sunday 2026-11-15 00:00 UTC plus k days and k hours, one epoch per weekday.
+want clock "$(rr '' "$fix")" "$B5 ↻22:13 ⊟◂ ● $B7 ↻M16|02:00 ⊟◂"
+want clock-explicit "$(rr '"resets":true,"resets_format":"clock"' "$fix")" "$B5 ↻22:13 ⊟◂ ● $B7 ↻M16|02:00 ⊟◂"
+# Day code, day of month and HH:MM: Sunday 2026-11-15 00:00 UTC plus k days and k hours, one epoch per weekday.
 codes=(Su M T W R F Sa)
 for k in 0 1 2 3 4 5 6; do
-  want "day $k" "$(rr '' "$(rp '' $((1794700800+k*86400+k*3600)))")" "$B5 ⊟◂ ● $B7 ↻${codes[k]}0$k ⊟◂"
+  want "day $k" "$(rr '' "$(rp '' $((1794700800+k*86400+k*3600)))")" "$B5 ⊟◂ ● $B7 ↻${codes[k]}$((15+k))|0$k:00 ⊟◂"
 done
 # Round-up: :59:59 reaches the next minute (and Saturday 23:59:59 the next day); an exact minute stays.
-want roundup "$(rr '' "$(rp 1794751199 1795305599)")" "$B5 ↻14:00 ⊟◂ ● $B7 ↻Su00 ⊟◂"
+want roundup "$(rr '' "$(rp 1794751199 1795305599)")" "$B5 ↻14:00 ⊟◂ ● $B7 ↻Su22|00:00 ⊟◂"
 want exact "$(rr '' "$(rp 1794751140 '')")" "$B5 ↻13:59 ⊟◂ ● $B7 ⊟◂"
 # Countdown minutes, a sub-minute remainder rounding up, and a reset already past.
 want minutes "$(rr "$cd_" "$(rp 1794427500 1794427261)")" "$B5 ↻5m ⊟◂ ● $B7 ↻2m ⊟◂"
@@ -197,7 +197,7 @@ want bounds-day "$(rr "$cd_" "$(rp 1794513540 1794513600)")" "$B5 ↻23h59m ⊟�
 # Out of range (a millisecond epoch, 1e300, negative): no reset text, each slot on its own, both formats.
 for x in '' "$cd_"; do
   want "out-of-range [$x]" "$(rr "$x" "$(rp 1794435180000 1e300)")" "$B5 ⊟◂ ● $B7 ⊟◂"
-  if [[ -n $x ]]; then w='↻4d6h'; else w='↻M02'; fi
+  if [[ -n $x ]]; then w='↻4d6h'; else w='↻M16|02:00'; fi
   want "out-of-range-one [$x]" "$(rr "$x" "$(rp -60 1794794400)")" "$B5 ⊟◂ ● $B7 $w ⊟◂"
 done
 want past "$(rr "$cd_" "$(rp 1794426600 '')")" "$B5 ↻0m ⊟◂ ● $B7 ⊟◂"

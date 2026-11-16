@@ -5,6 +5,12 @@ All notable changes to claude-statusline (formerly braisenly-statusline) are doc
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Releases are tagged `claude-statusline@X.Y.Z`
 (up to 1.1.0: `braisenly-statusline@X.Y.Z`).
 
+## [2.3.0] — 2026-11-16
+
+### Minor changes
+
+- The 7d clock shows the reset's day of month and full time: day code, two-digit day of month, then `|HH:MM`, for example `↻Su22|14:00` (was `↻Su14`, whose hour read like a date). The 5h clock and both countdowns are unchanged.
+
 ## [2.2.0] — 2026-11-16
 
 ### Minor changes

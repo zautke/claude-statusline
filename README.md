@@ -41,11 +41,11 @@ Fable usage is read from a machine-global cache. Refresh runs detached and uses 
 Each 5h and 7d slot shows when its limit resets, then a click hint (clock values below are UTC; you see your local time):
 
 ```text
-5h [██░░░░░░░░░░] (20%) ↻22:13 ⊟◂ ● 7d [████░░░░░░░░] (30%) ↻M02 ⊟◂      clock (default)
-5h [██░░░░░░░░░░] (20%) ↻2h13m ⊟◂ ● 7d [████░░░░░░░░] (30%) ↻4d6h ⊟◂     countdown
+5h [██░░░░░░░░░░] (20%) ↻22:13 ⊟◂ ● 7d [████░░░░░░░░] (30%) ↻M16|02:00 ⊟◂ clock (default)
+5h [██░░░░░░░░░░] (20%) ↻2h13m ⊟◂ ● 7d [████░░░░░░░░] (30%) ↻4d6h ⊟◂      countdown
 ```
 
-- `clock`: 5h as 24h local `↻HH:MM`; 7d as day code plus 24h hour, `↻F14`. Day codes: `M T W R F Sa Su` (Mon to Sun, `R` is Thursday). Reset times are rounded up to the next minute.
+- `clock`: 5h as 24h local `↻HH:MM`; 7d as day code, day of month and 24h `HH:MM`, `↻F20|14:00`. Day codes: `M T W R F Sa Su` (Mon to Sun, `R` is Thursday). Reset times are rounded up to the next minute.
 - `countdown`: `↻2h13m`, `↻42m`, `↻4d6h`. When the status line is claude-statusline's own, selecting it sets `statusLine.refreshInterval` to 60 if none is set, and leaving it removes a `refreshInterval` of exactly 60 (any other value is kept). With any other status line, set `refreshInterval` to 60 or less yourself.
 - `⊟◂` means reset times are shown, `⊞◂` that they are hidden. The `resets` fit-ladder step drops the reset text first when the line does not fit. It is first only in the default ladder: a custom `fit.ladder` is used as written, so add `"resets"` at its front (or set `"resets": false`).
 - Config keys in `statusline.json`: `resets` (bool, default `true`) and `resets_format` (`clock` or `countdown`).

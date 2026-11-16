@@ -37,7 +37,7 @@ Report an exact validation error before changing invalid input. Keep existing va
 
 Each 5h and 7d slot can show when its limit resets, from the `rate_limits.*.resets_at` the status line receives; a window that is absent shows nothing. The time is rounded up to the next whole minute, in the local time zone.
 
-- `clock` (default): 5h shows `↻22:40` (24h `HH:MM`); 7d shows `↻F14` (day code plus 24h hour). Day codes: `M` Mon, `T` Tue, `W` Wed, `R` Thu, `F` Fri, `Sa` Sat, `Su` Sun.
+- `clock` (default): 5h shows `↻22:40` (24h `HH:MM`); 7d shows `↻F20|14:00` (day code, day of month, then 24h `HH:MM`). Day codes: `M` Mon, `T` Tue, `W` Wed, `R` Thu, `F` Fri, `Sa` Sat, `Su` Sun.
 - `countdown`: `↻2h13m`, under an hour `↻42m`, a day or more `↻4d6h`.
 - Every rendered 5h/7d slot ends with a 2-cell click hint: `⊟◂` when reset times are shown, `⊞◂` when `resets` is `false`.
 - Ladder: `resets` is the first default step, so a narrow line drops the reset text and hint from both slots before anything else. A custom `fit.ladder` is used as written. Whenever you touch a `statusline.json` whose `fit.ladder` lacks `resets`, offer the user the choice: add `"resets"` at the front of the ladder, or set `"resets": false`. Do not add it without asking.

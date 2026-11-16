@@ -247,14 +247,14 @@ _x=$(df -k /tmp 2>/dev/null|tail -1); if [[ $(awk '{print $1}'<<<"$_x") == tmpfs
 five_pct=; [[ $five != null && -n $five ]]&&five_pct=$(printf '%.0f' "$five")
 seven_pct=; [[ $seven != null && -n $seven ]]&&seven_pct=$(printf '%.0f' "$seven")
 fable_pct=; [[ $fable != null && -n $fable ]]&&fable_pct=$(printf '%.0f' "$fable")
-# Reset text per slot, once: resets_at rounded up to the minute, then clock (local HH:MM / day code + HH) or countdown.
+# Reset text per slot, once: resets_at rounded up to the minute, then clock (local HH:MM / day code + day of month + |HH:MM) or countdown.
 five_reset= seven_reset=
 if [[ $resets_mode != off ]]; then
   now=${CLAUDE_STATUSLINE_NOW:-}; [[ $now =~ $NON_NEGATIVE_INTEGER_DIGITS_ONLY ]] || now=$(date +%s)
   { IFS= read -r five_reset; IFS= read -r seven_reset; } < <(jq -r --arg mode "$resets_mode" --argjson now "$now" --arg g "$RESET_TIME_GLYPH_CLOCKWISE_OPEN_CIRCLE_ARROW" --arg days "${WEEKDAY_CODES_SUNDAY_FIRST_Su_M_T_W_R_F_Sa[*]}" --argjson max "$RESETS_AT_LATEST_RENDERABLE_EPOCH_SECONDS_9999_12_31_23_59_00_UTC" '
     def txt($slot): if type != "number" or . < 0 or . > $max then "" else ((./60|ceil)*60) as $at |
       if $mode == "clock" then
-        if $slot == "5h" then $at|strflocaltime("%H:%M") else ($days|split(" "))[$at|strflocaltime("%w")|tonumber] + ($at|strflocaltime("%H")) end
+        if $slot == "5h" then $at|strflocaltime("%H:%M") else ($days|split(" "))[$at|strflocaltime("%w")|tonumber] + ($at|strflocaltime("%d|%H:%M")) end
       else ((($at-$now)/60|ceil) as $c | if $c > 0 then $c else 0 end) as $m |
         if $m >= 1440 then "\($m/1440|floor)d\($m%1440/60|floor)h" elif $m >= 60 then "\($m/60|floor)h\($m%60)m" else "\($m)m" end
       end | $g + . end;
