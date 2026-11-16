@@ -383,7 +383,7 @@ function Get-ResetText($at, [string]$slot) {
     $up = [long]([math]::Ceiling([double]$at / 60) * 60)
     if ($resetsMode -eq 'clock') {
         $t = [DateTimeOffset]::FromUnixTimeSeconds($up).ToLocalTime(); $ic = [Globalization.CultureInfo]::InvariantCulture
-        $s = if ($slot -eq '5h') { $t.ToString('HH:mm', $ic) } else { $WEEKDAY_CODES_SUNDAY_FIRST_SU_M_T_W_R_F_SA[[int]$t.DayOfWeek] + $t.ToString('HH', $ic) }
+        $s = if ($slot -eq '5h') { $t.ToString('HH:mm', $ic) } else { $WEEKDAY_CODES_SUNDAY_FIRST_Su_M_T_W_R_F_Sa[[int]$t.DayOfWeek] + $t.ToString('HH', $ic) }
     } else {
         $m = [math]::Max(0L, [long][math]::Ceiling(($up - $nowEpoch) / 60.0))
         $s = if ($m -ge 1440) { "$([math]::Floor($m / 1440))d$([math]::Floor($m % 1440 / 60))h" } elseif ($m -ge 60) { "$([math]::Floor($m / 60))h$($m % 60)m" } else { "${m}m" }

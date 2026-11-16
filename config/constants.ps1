@@ -42,7 +42,7 @@ $RESETS_CLICK_GLYPH_SHOWN_SQUARED_MINUS_THEN_LEFT_POINTING_SMALL_TRIANGLE = '⊟
 $RESETS_CLICK_GLYPH_HIDDEN_SQUARED_PLUS_THEN_LEFT_POINTING_SMALL_TRIANGLE = '⊞◂'
 
 # Fixed day codes for the 7d clock format, indexed Sunday = 0 through Saturday = 6 (no locale).
-$WEEKDAY_CODES_SUNDAY_FIRST_SU_M_T_W_R_F_SA = @('SU', 'M', 'T', 'W', 'R', 'F', 'SA')
+$WEEKDAY_CODES_SUNDAY_FIRST_Su_M_T_W_R_F_Sa = @('Su', 'M', 'T', 'W', 'R', 'F', 'Sa')
 
 # statusLine.refreshInterval (seconds) that keeps the countdown format current.
 $RESETS_COUNTDOWN_STATUS_LINE_REFRESH_INTERVAL_SECONDS = 60

@@ -1,6 +1,6 @@
 {
   "name": "claude-statusline",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Configurable Claude Code status line with native limits, Fable usage, system health, terminal-width fitting, optional resize refit, drift controls, and cross-platform renderers.",
   "author": {
     "name": "Luke Zautke",

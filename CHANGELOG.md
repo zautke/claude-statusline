@@ -5,6 +5,12 @@ All notable changes to claude-statusline (formerly braisenly-statusline) are doc
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Releases are tagged `claude-statusline@X.Y.Z`
 (up to 1.1.0: `braisenly-statusline@X.Y.Z`).
 
+## [2.2.0] — 2026-11-16
+
+### Minor changes
+
+- The 7d clock writes the weekend day codes in title case: `Sa` (Saturday) and `Su` (Sunday), for example `↻Sa14`. Weekdays stay one capital letter: `M T W R F`.
+
 ## [2.1.0] — 2026-11-11
 
 ### Minor changes

@@ -182,12 +182,12 @@ want countdown "$(rr "$cd_" "$fix")" "$B5 ↻2h13m ⊟◂ ● $B7 ↻4d6h ⊟◂
 want clock "$(rr '' "$fix")" "$B5 ↻22:13 ⊟◂ ● $B7 ↻M02 ⊟◂"
 want clock-explicit "$(rr '"resets":true,"resets_format":"clock"' "$fix")" "$B5 ↻22:13 ⊟◂ ● $B7 ↻M02 ⊟◂"
 # Day codes: Sunday 2026-11-15 00:00 UTC plus k days and k hours, one epoch per weekday.
-codes=(SU M T W R F SA)
+codes=(Su M T W R F Sa)
 for k in 0 1 2 3 4 5 6; do
   want "day $k" "$(rr '' "$(rp '' $((1794700800+k*86400+k*3600)))")" "$B5 ⊟◂ ● $B7 ↻${codes[k]}0$k ⊟◂"
 done
 # Round-up: :59:59 reaches the next minute (and Saturday 23:59:59 the next day); an exact minute stays.
-want roundup "$(rr '' "$(rp 1794751199 1795305599)")" "$B5 ↻14:00 ⊟◂ ● $B7 ↻SU00 ⊟◂"
+want roundup "$(rr '' "$(rp 1794751199 1795305599)")" "$B5 ↻14:00 ⊟◂ ● $B7 ↻Su00 ⊟◂"
 want exact "$(rr '' "$(rp 1794751140 '')")" "$B5 ↻13:59 ⊟◂ ● $B7 ⊟◂"
 # Countdown minutes, a sub-minute remainder rounding up, and a reset already past.
 want minutes "$(rr "$cd_" "$(rp 1794427500 1794427261)")" "$B5 ↻5m ⊟◂ ● $B7 ↻2m ⊟◂"
