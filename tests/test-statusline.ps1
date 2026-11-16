@@ -165,7 +165,7 @@ try {
     function Clock([long]$at, [string]$slot) {
         $t = [DateTimeOffset]::FromUnixTimeSeconds([long]([math]::Ceiling($at / 60.0) * 60)).ToLocalTime()
         if ($slot -eq '5h') { return '↻' + $t.ToString('HH:mm', $ic) }
-        return '↻' + $WEEKDAY_CODES_SUNDAY_FIRST_SU_M_T_W_R_F_SA[[int]$t.DayOfWeek] + $t.ToString('HH', $ic)
+        return '↻' + $WEEKDAY_CODES_SUNDAY_FIRST_Su_M_T_W_R_F_Sa[[int]$t.DayOfWeek] + $t.ToString('HH', $ic)
     }
     $B5 = '5h [██░░░░░░░░░░] (20%)'; $B7 = '7d [████░░░░░░░░] (30%)'; $cd = '"resets_format":"countdown"'
     $fix = Pay 1794435180 1794794400
@@ -176,10 +176,10 @@ try {
     # Day codes: 7 consecutive LOCAL dates at 12:00 from Sunday 2026-11-15, so the weekday is the same in every zone
     # (and no DST edge is near); literal codes, not the renderer's constant.
     function LocalEpoch([int]$day, [int]$h, [int]$m, [int]$s) { ([DateTimeOffset][datetime]::new(2026, 11, $day, $h, $m, $s, [DateTimeKind]::Local)).ToUnixTimeSeconds() }
-    $codes = @('SU', 'M', 'T', 'W', 'R', 'F', 'SA')
+    $codes = @('Su', 'M', 'T', 'W', 'R', 'F', 'Sa')
     for ($k = 0; $k -le 6; $k++) { Want "day $k" (Rr '' (Pay $null (LocalEpoch (15 + $k) 12 0 0))) "$B5 ⊟◂ ● $B7 ↻$($codes[$k])12 ⊟◂" }
     # Round-up: local 13:59:59 reaches 14:00 and Saturday 23:59:59 reaches Sunday 00; an exact minute stays.
-    Want 'roundup' (Rr '' (Pay (LocalEpoch 15 13 59 59) (LocalEpoch 21 23 59 59))) "$B5 ↻14:00 ⊟◂ ● $B7 ↻SU00 ⊟◂"
+    Want 'roundup' (Rr '' (Pay (LocalEpoch 15 13 59 59) (LocalEpoch 21 23 59 59))) "$B5 ↻14:00 ⊟◂ ● $B7 ↻Su00 ⊟◂"
     Want 'exact' (Rr '' (Pay (LocalEpoch 15 13 59 0) $null)) "$B5 ↻13:59 ⊟◂ ● $B7 ⊟◂"
     # Countdown minutes, a sub-minute remainder rounding up, and a reset already past.
     Want 'minutes' (Rr $cd (Pay 1794427500 1794427261)) "$B5 ↻5m ⊟◂ ● $B7 ↻2m ⊟◂"

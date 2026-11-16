@@ -21,7 +21,7 @@ fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 [[ $RESET_TIME_GLYPH_CLOCKWISE_OPEN_CIRCLE_ARROW == '↻' ]] || fail 'reset glyph'
 [[ $RESETS_CLICK_GLYPH_SHOWN_SQUARED_MINUS_THEN_LEFT_POINTING_SMALL_TRIANGLE == '⊟◂' ]] || fail 'shown glyph'
 [[ $RESETS_CLICK_GLYPH_HIDDEN_SQUARED_PLUS_THEN_LEFT_POINTING_SMALL_TRIANGLE == '⊞◂' ]] || fail 'hidden glyph'
-[[ ${#WEEKDAY_CODES_SUNDAY_FIRST_SU_M_T_W_R_F_SA[@]} -eq 7 && ${WEEKDAY_CODES_SUNDAY_FIRST_SU_M_T_W_R_F_SA[*]} == 'SU M T W R F SA' ]] || fail 'day codes'
+[[ ${#WEEKDAY_CODES_SUNDAY_FIRST_Su_M_T_W_R_F_Sa[@]} -eq 7 && ${WEEKDAY_CODES_SUNDAY_FIRST_Su_M_T_W_R_F_Sa[*]} == 'Su M T W R F Sa' ]] || fail 'day codes'
 [[ $RESETS_COUNTDOWN_STATUS_LINE_REFRESH_INTERVAL_SECONDS == 60 ]] || fail 'refresh interval'
 [[ $RESETS_TOGGLE_DEFAULT_KEY_CHORD_CTRL_X_THEN_R == 'ctrl+x r' ]] || fail 'default chord'
 

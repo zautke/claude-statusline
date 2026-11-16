@@ -17,7 +17,7 @@ function Vis([string]$s) { $s.Replace([string][char]27, '<ESC>').Replace([string
 if ($RESET_TIME_GLYPH_CLOCKWISE_OPEN_CIRCLE_ARROW -cne '↻') { Fail 'reset glyph' }
 if ($RESETS_CLICK_GLYPH_SHOWN_SQUARED_MINUS_THEN_LEFT_POINTING_SMALL_TRIANGLE -cne '⊟◂') { Fail 'shown glyph' }
 if ($RESETS_CLICK_GLYPH_HIDDEN_SQUARED_PLUS_THEN_LEFT_POINTING_SMALL_TRIANGLE -cne '⊞◂') { Fail 'hidden glyph' }
-if ($WEEKDAY_CODES_SUNDAY_FIRST_SU_M_T_W_R_F_SA.Count -ne 7 -or ($WEEKDAY_CODES_SUNDAY_FIRST_SU_M_T_W_R_F_SA -join ' ') -cne 'SU M T W R F SA') { Fail 'day codes' }
+if ($WEEKDAY_CODES_SUNDAY_FIRST_Su_M_T_W_R_F_Sa.Count -ne 7 -or ($WEEKDAY_CODES_SUNDAY_FIRST_Su_M_T_W_R_F_Sa -join ' ') -cne 'Su M T W R F Sa') { Fail 'day codes' }
 if ($RESETS_COUNTDOWN_STATUS_LINE_REFRESH_INTERVAL_SECONDS -ne 60) { Fail 'refresh interval' }
 if ($RESETS_TOGGLE_DEFAULT_KEY_CHORD_CTRL_X_THEN_R -cne 'ctrl+x r') { Fail 'default chord' }
 

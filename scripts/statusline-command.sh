@@ -251,7 +251,7 @@ fable_pct=; [[ $fable != null && -n $fable ]]&&fable_pct=$(printf '%.0f' "$fable
 five_reset= seven_reset=
 if [[ $resets_mode != off ]]; then
   now=${CLAUDE_STATUSLINE_NOW:-}; [[ $now =~ $NON_NEGATIVE_INTEGER_DIGITS_ONLY ]] || now=$(date +%s)
-  { IFS= read -r five_reset; IFS= read -r seven_reset; } < <(jq -r --arg mode "$resets_mode" --argjson now "$now" --arg g "$RESET_TIME_GLYPH_CLOCKWISE_OPEN_CIRCLE_ARROW" --arg days "${WEEKDAY_CODES_SUNDAY_FIRST_SU_M_T_W_R_F_SA[*]}" --argjson max "$RESETS_AT_LATEST_RENDERABLE_EPOCH_SECONDS_9999_12_31_23_59_00_UTC" '
+  { IFS= read -r five_reset; IFS= read -r seven_reset; } < <(jq -r --arg mode "$resets_mode" --argjson now "$now" --arg g "$RESET_TIME_GLYPH_CLOCKWISE_OPEN_CIRCLE_ARROW" --arg days "${WEEKDAY_CODES_SUNDAY_FIRST_Su_M_T_W_R_F_Sa[*]}" --argjson max "$RESETS_AT_LATEST_RENDERABLE_EPOCH_SECONDS_9999_12_31_23_59_00_UTC" '
     def txt($slot): if type != "number" or . < 0 or . > $max then "" else ((./60|ceil)*60) as $at |
       if $mode == "clock" then
         if $slot == "5h" then $at|strflocaltime("%H:%M") else ($days|split(" "))[$at|strflocaltime("%w")|tonumber] + ($at|strflocaltime("%H")) end
