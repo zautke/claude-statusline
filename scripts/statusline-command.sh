@@ -168,6 +168,8 @@ if ((${#_g}!=1)); then case $OSTYPE in darwin*) _c='en_US.UTF-8 C.UTF-8';; *) _c
 # The switch is this process's own business: child processes (jq, awk, df) keep the locale they were given.
 [[ $LC_ALL == "$_o" ]] || export -n LC_ALL; unset _o _g _c _l
 sep="$sep_color ● $reset"
+# fmt_tok <tokens> [decimals]: decimal units (1000), the way Claude Code counts tokens; a trailing .0 is dropped.
+fmt_tok() { awk -v n="$1" -v d="${2:-1}" 'BEGIN{u="";if(n>=1e6){n/=1e6;u="M"}else if(n>=1000){n/=1000;u="K"}else d=0;s=sprintf("%.*f",d,n);sub(/\.0$/,"",s);print s u}'; }
 # fmt_bytes <bytes> [decimals]
 fmt_bytes() { local b=$1 d=${2:-1}; if ((b>=1073741824)); then awk -v b="$b" -v d="$d" 'BEGIN{printf "%.*fG",d,b/1073741824}'; elif ((b>=1048576)); then awk -v b="$b" -v d="$d" 'BEGIN{printf "%.*fM",d,b/1048576}'; elif ((b>=1024)); then awk -v b="$b" -v d="$d" 'BEGIN{printf "%.*fK",d,b/1024}'; else printf '%dB' "$b"; fi; }
 # Gradient colour of a bar cell at position pos (0..100): green, through amber, to red. Sets r g b; no subshell.
@@ -239,7 +241,7 @@ W_ctx=$(get_width context 12) W_disk=$(get_width disk 12) W_tmp=$(get_width tmp 
 profile=${CLAUDE_PROFILE:-}; if [[ -z $profile && -n ${CLAUDE_CONFIG_DIR:-} ]]; then _b=${CLAUDE_CONFIG_DIR##*/}; [[ $_b == .claude-* ]]&&profile=${_b#.claude-}; fi
 cwd=${PWD/#$HOME/\~}; ((${#cwd}>30))&&cwd="…/$(basename "$(dirname "$PWD")")/$(basename "$PWD")"
 ctx_pct=; ctx_used1= ctx_used0= ctx_total1= ctx_total0=
-if [[ $used != null && $ctx -gt 0 ]]; then ctx_pct=$(printf '%.0f' "$used"); ctx_used1=$(fmt_bytes "$total_in" 1); ctx_used0=$(fmt_bytes "$total_in" 0); ctx_total1=$(fmt_bytes "$ctx" 1); ctx_total0=$(fmt_bytes "$ctx" 0); fi
+if [[ $used != null && $ctx -gt 0 ]]; then ctx_pct=$(printf '%.0f' "$used"); ctx_used1=$(fmt_tok "$total_in" 1); ctx_used0=$(fmt_tok "$total_in" 0); ctx_total1=$(fmt_tok "$ctx" 1); ctx_total0=$(fmt_tok "$ctx" 0); fi
 disk_pct= disk_free1= disk_free0=
 _x=$(df -k / 2>/dev/null|tail -1); if [[ -n $_x ]]; then _t=$(awk '{print $2}'<<<"$_x"); _a=$(awk '{print $4}'<<<"$_x"); if ((_t>0)); then disk_pct=$(((_t-_a)*100/_t)); disk_free1=$(fmt_bytes $((_a*1024)) 1); disk_free0=$(fmt_bytes $((_a*1024)) 0); fi; fi
 tmp_pct= tmp_free1= tmp_free0=

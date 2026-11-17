@@ -347,11 +347,17 @@ function Format-BytesD([long]$b, [int]$d) {
     if ($b -ge 1024)       { return ("{0:F$d}K" -f ($b / 1024)) }
     return "${b}B"
 }
+# Tokens use decimal units (1000), the way Claude Code counts them; a trailing .0 is dropped.
+function Format-Tokens([long]$n, [int]$d) {
+    $u = ''; $v = [double]$n
+    if ($n -ge 1000000) { $v /= 1000000; $u = 'M' } elseif ($n -ge 1000) { $v /= 1000; $u = 'K' } else { $d = 0 }
+    return (("{0:F$d}" -f $v) -replace '\.0$', '') + $u
+}
 $ctxPct = $null
 if ($null -ne $usedPct -and $ctxSize -gt 0) {
     $ctxPct = [int][math]::Round($usedPct)
-    $ctxUsed1 = Format-BytesD $totalIn 1; $ctxUsed0 = Format-BytesD $totalIn 0
-    $ctxTotal1 = Format-BytesD $ctxSize 1; $ctxTotal0 = Format-BytesD $ctxSize 0
+    $ctxUsed1 = Format-Tokens $totalIn 1; $ctxUsed0 = Format-Tokens $totalIn 0
+    $ctxTotal1 = Format-Tokens $ctxSize 1; $ctxTotal0 = Format-Tokens $ctxSize 0
 }
 $diskPct = $null; $tmpPct = $null
 if ($IsWindows) {

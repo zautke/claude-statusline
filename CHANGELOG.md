@@ -5,6 +5,12 @@ All notable changes to claude-statusline (formerly braisenly-statusline) are doc
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Releases are tagged `claude-statusline@X.Y.Z`
 (up to 1.1.0: `braisenly-statusline@X.Y.Z`).
 
+## [2.3.1] — 2026-11-17
+
+### Patch changes
+
+- The context segment counts tokens in decimal units, as Claude Code does: 182,832 tokens reads `182.8K` (was `178.5K`) and a 1,000,000-token window reads `1M` (was `953.7K`). The byte formatter, which divides by 1024, was being used for tokens. Disk sizes keep binary units. Both renderers.
+
 ## [2.3.0] — 2026-11-16
 
 ### Minor changes
