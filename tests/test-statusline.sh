@@ -42,7 +42,7 @@ JSON
 printf '{"used_percentage":42,"resets_at":"2026-09-21T00:00:00Z","model":"Fable","fetched_at":%s}\n' "$(date +%s)" \
   >"$XDG_CACHE_HOME/claude-statusline/fable.json"
 
-payload='{"model":{"display_name":"Claude"},"context_window":{"used_percentage":25,"total_input_tokens":1000,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":20,"resets_at":1794435180},"seven_day":{"used_percentage":30,"resets_at":1794794400}}}'
+payload='{"model":{"display_name":"Claude"},"context_window":{"used_percentage":25,"total_input_tokens":50400,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":20,"resets_at":1794435180},"seven_day":{"used_percentage":30,"resets_at":1794794400}}}'
 plain=$(printf '%s' "$payload" | NO_COLOR=1 CLAUDE_STATUSLINE_DISABLE_REFRESH=1 ${TEST_BASH:-bash} "$ROOT/scripts/statusline-command.sh")
 
 [[ "$plain" == *"five ["* ]] || { printf 'missing custom five-hour label\n' >&2; exit 1; }
@@ -93,7 +93,7 @@ r1=$(row "$stk" 1); r2=$(row "$stk" 2)
 [[ "$r1" == *"ctx [░░░░░░░░░░░░]"* || "$r1" == *"ctx [███░░░░░░░░░]"* ]] || { printf 'stacked top row lost full ctx bar: %s\n' "$r1" >&2; exit 1; }
 pos1=${r1%%●*}; pos2=${r2%%●*}
 [[ ${#pos1} -eq ${#pos2} ]] || { printf 'separator misaligned between rows\n' >&2; exit 1; }
-[[ "$r2" == *"1000B/195.3K (25%)"* ]] || { printf 'stacked bottom row lost ctx values: %s\n' "$r2" >&2; exit 1; }
+[[ "$r2" == *"50.4K/200K (25%)"* ]] || { printf 'stacked bottom row lost ctx values: %s\n' "$r2" >&2; exit 1; }
 stk_cells=$(cells "$r1")
 # Shrink: just under the stacked width, bars shrink but stay >= 5 and rows are padded to the budget.
 shr=$(render $((stk_cells-6+margin)))
@@ -245,18 +245,18 @@ expect_step() { # $1 step, $2 expected floor output
 t=${base//(/}; t=${t//)/}
 t2=${base// ↻2h13m ⊟◂/}; expect_step resets "${t2// ↻4d6h ⊟◂/}"
 expect_step disk_label "${base//disk /}"
-expect_step ctx_int "${base//\/195.3K//195K}"
+expect_step ctx_int "${base//50.4K\//50K/}"
 expect_step no_parens "$t"
-expect_step ctx_no_total "${base//\/195.3K/}"
+expect_step ctx_no_total "${base//\/200K/}"
 expect_step no_free "${base// free/}"
 expect_step fable_short "${base//Fable (/F (}"
 expect_step disk_value "${base// $dtok free/}"
-expect_step ctx_no_used "${base//1000B\//}"
+expect_step ctx_no_used "${base//50.4K\//}"
 expect_step fable_label "${base//Fable (/(}"
 expect_step fable_segment "${base// ● Fable (42%)/}"
 expect_step seven_label "${base//7d (/(}"
 expect_step five_label "${base//5h (/(}"
-expect_step ctx_label "${base//ctx 1000B/1000B}"
+expect_step ctx_label "${base//ctx 50.4K/50.4K}"
 expect_step seven_segment "${base// ● 7d (30%) ↻4d6h ⊟◂/}"
 expect_step five_segment "${base// ● 5h (20%) ↻2h13m ⊟◂/}"
 o=$(floor disk_int)

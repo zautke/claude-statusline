@@ -59,7 +59,7 @@ function Get-Bracket([string]$s, [string]$after) { $i = $s.IndexOf($after); if (
 try {
     Set-Config '{"segments":["five_hour","fable","seven_day"],"labels":{"five_hour":"five","fable":"story","seven_day":"week"},"widths":{"five_hour":3,"fable":5,"seven_day":4}}'
     [IO.File]::WriteAllText($Fable, '{"used_percentage":42,"resets_at":"2026-09-21T00:00:00Z","model":"Fable","fetched_at":' + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + '}')
-    $script:payload = '{"model":{"display_name":"Claude"},"context_window":{"used_percentage":25,"total_input_tokens":1000,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":20,"resets_at":1794435180},"seven_day":{"used_percentage":30,"resets_at":1794794400}}}'
+    $script:payload = '{"model":{"display_name":"Claude"},"context_window":{"used_percentage":25,"total_input_tokens":50400,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":20,"resets_at":1794435180},"seven_day":{"used_percentage":30,"resets_at":1794794400}}}'
     $plain = Invoke-Renderer
 
     if ($plain -notlike '*five `[*') { Fail 'missing custom five-hour label' }
@@ -89,7 +89,7 @@ try {
     $r1, $r2 = Get-Rows $stk
     if ($r1 -notlike '*ctx `[░░░░░░░░░░░░`]*' -and $r1 -notlike '*ctx `[███░░░░░░░░░`]*') { Fail "stacked top row lost full ctx bar: $r1" }
     if ($r1.IndexOf('●') -ne $r2.IndexOf('●')) { Fail 'separator misaligned between rows' }
-    if ($r2 -notlike '*1000B/195.3K (25%)*') { Fail "stacked bottom row lost ctx values: $r2" }
+    if ($r2 -notlike '*50.4K/200K (25%)*') { Fail "stacked bottom row lost ctx values: $r2" }
     $stkCells = Get-Cells $r1
     $shr = Render ($stkCells - 6 + $margin)
     Assert-Fit 'shrink' $shr ($stkCells - 6)
@@ -235,18 +235,18 @@ try {
     $expect = [ordered]@{
         resets        = $base.Replace(' ↻2h13m ⊟◂', '').Replace(' ↻4d6h ⊟◂', '')
         disk_label   = $base.Replace('disk ', '')
-        ctx_int       = $base.Replace('/195.3K', '/195K')
+        ctx_int       = $base.Replace('50.4K/', '50K/')
         no_parens     = $base.Replace('(', '').Replace(')', '')
-        ctx_no_total  = $base.Replace('/195.3K', '')
+        ctx_no_total  = $base.Replace('/200K', '')
         no_free       = $base.Replace(' free', '')
         fable_short   = $base.Replace('Fable (', 'F (')
         disk_value    = $base.Replace(" $diskTok free", '')
-        ctx_no_used   = $base.Replace('1000B/', '')
+        ctx_no_used   = $base.Replace('50.4K/', '')
         fable_label   = $base.Replace('Fable (', '(')
         fable_segment = $base.Replace(' ● Fable (42%)', '')
         seven_label   = $base.Replace('7d (', '(')
         five_label    = $base.Replace('5h (', '(')
-        ctx_label     = $base.Replace('ctx 1000B', '1000B')
+        ctx_label     = $base.Replace('ctx 50.4K', '50.4K')
         seven_segment = $base.Replace(' ● 7d (30%) ↻4d6h ⊟◂', '')
         five_segment  = $base.Replace(' ● 5h (20%) ↻2h13m ⊟◂', '')
     }
