@@ -48,7 +48,7 @@ chord=$RESETS_TOGGLE_DEFAULT_KEY_CHORD_CTRL_X_THEN_R
 bind=command:$RESETS_COMMAND_NAME
 
 warn() { printf 'install.sh: %s\n' "$*" >&2; }
-# Follow links so a dotfiles-managed file keeps its link (from resize-watch.sh).
+# Follow links so a dotfiles-managed file keeps its link (shared with the resets toggle).
 resolve() { local t=$1 n=0 d; if readlink -f / >/dev/null 2>&1; then readlink -f "$t"; return; fi; while [[ -L $t && $n -lt 32 ]]; do d=$(dirname "$t"); t=$(readlink "$t"); [[ $t == /* ]] || t=$d/$t; n=$((n+1)); done; printf '%s' "$t"; }
 # Temp file beside the target, original mode carried over, then rename.
 atomic_write() {
@@ -65,7 +65,7 @@ settings=$config_dir/settings.json
 [[ -e $settings ]] && settings=$(resolve "$settings")
 current=
 if [[ -r $settings ]]; then
-  # Strip the resize watcher's nonce before the ownership check.
+  # Strip the redraw nonce before the ownership check.
   current=$(jq -r --arg nonce "$NONCE_SUFFIX_SPACE_HASH_BSL_COLS_EQUALS_DIGITS_AT_END" '(.statusLine.command//empty)|sub($nonce; "")' "$settings" 2>/dev/null) ||
     { warn "$settings is not valid JSON; fix it and run again."; exit 1; }
 fi

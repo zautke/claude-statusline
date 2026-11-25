@@ -21,7 +21,7 @@ function Render {
     $psi.WorkingDirectory = $Tmp
     $psi.Environment['HOME'] = $Tmp; $psi.Environment['USERPROFILE'] = $Tmp
     $psi.Environment['CLAUDE_CONFIG_DIR'] = $ConfigDir; $psi.Environment['XDG_CACHE_HOME'] = $CacheDir
-    $psi.Environment['CLAUDE_STATUSLINE_DISABLE_WATCH'] = '1'; $psi.Environment['CLAUDE_STATUSLINE_DISABLE_REFRESH'] = '1'
+    $psi.Environment['CLAUDE_STATUSLINE_DISABLE_REFRESH'] = '1'
     $psi.Environment['NO_COLOR'] = '1'; $psi.Environment['COLUMNS'] = '300'; $psi.Environment['CLAUDE_STATUSLINE_NOW'] = '1794427200'
     $psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
     $psi.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)

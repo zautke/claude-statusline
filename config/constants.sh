@@ -5,7 +5,7 @@
 # the org 4-part stamp (kb protocols/release/protocol-org-wide-branch-and-version-policy-development-and-main, addendum 2026-10-16).
 PLAIN_SEMVER_MAJOR_DOT_MINOR_DOT_PATCH_DIGITS_ONLY='^[0-9]+\.[0-9]+\.[0-9]+$'
 
-# Resize-watcher nonce appended to statusLine.command, e.g. " # bsl-cols=120".
+# Redraw nonce appended to statusLine.command by the resets toggle, e.g. " # bsl-cols=120".
 NONCE_SUFFIX_SPACE_HASH_BSL_COLS_EQUALS_DIGITS_AT_END=' # bsl-cols=[0-9]+$'
 
 # Drift session id: letters, digits, dot, underscore, hyphen only (no separators, no traversal).

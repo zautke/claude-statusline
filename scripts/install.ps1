@@ -50,7 +50,7 @@ $bind = "command:$($id.RESETS_COMMAND_NAME)"
 function Warn([string]$m) { [Console]::Error.WriteLine("install.ps1: $m") }
 # A failed write (e.g. settings.json held open by an editor) stops the run with one line and exit 1, never "Installed".
 trap { Warn $_.Exception.Message; exit 1 }
-# Follow links so a dotfiles-managed file keeps its link (from resize-watch.ps1).
+# Follow links so a dotfiles-managed file keeps its link (shared with the resets toggle).
 function Resolve-Target([string]$p) {
     try { $item = Get-Item -LiteralPath $p -Force -ErrorAction Stop; if ($item.LinkType) { $t = $item.ResolveLinkTarget($true); if ($t) { return $t.FullName } } } catch { }
     return $p
@@ -77,7 +77,7 @@ if (Test-Path -LiteralPath $settingsPath) {
     try { $settings = Read-Json $settingsPath } catch { Warn "$settingsPath is not valid JSON; fix it and run again."; exit 1 }
 }
 if ($null -eq $settings) { $settings = [ordered]@{} }
-# Strip the resize watcher's nonce before the ownership check.
+# Strip the redraw nonce before the ownership check.
 $current = ([string]$settings.statusLine.command) -replace $NONCE_SUFFIX_SPACE_HASH_BSL_COLS_EQUALS_DIGITS_AT_END, ''
 if (-not $Uninstall -and -not (Is-Owned $current) -and -not $Force) {
     [Console]::Error.WriteLine("Refusing to replace unrelated statusLine command: $current")

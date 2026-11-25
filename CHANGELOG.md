@@ -5,6 +5,12 @@ All notable changes to claude-statusline (formerly braisenly-statusline) are doc
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Releases are tagged `claude-statusline@X.Y.Z`
 (up to 1.1.0: `braisenly-statusline@X.Y.Z`).
 
+## [2.4.0] — 2026-11-25
+
+### Removed
+
+- The `fit.resize_watch` setting and the `resize-watch` sidecar (`scripts/resize-watch.sh` / `resize-watch.ps1`), which rewrote `statusLine.command` in `settings.json` with a `# bsl-cols=N` nonce to force a redraw about two seconds after a terminal resize. Claude Code 2.1.326 (2026-11-16) re-runs the status line on terminal resize natively ([anthropics/claude-code#107291](https://github.com/anthropics/claude-code/issues/107291), closing [#76988](https://github.com/anthropics/claude-code/issues/76988)); measured re-render ~0.8–2.1 s after the resize with no watcher and no settings writes. A leftover `resize_watch` key in `statusline.json` is accepted and ignored. The ` # bsl-cols=<n>` nonce remains in use by the resets toggle. Requires Claude Code ≥ 2.1.326 for automatic refit on resize.
+
 ## [2.3.1] — 2026-11-17
 
 ### Patch changes

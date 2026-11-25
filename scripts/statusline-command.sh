@@ -37,7 +37,7 @@ valid_config() {
     ((.labels//{})|to_entries|all(.value|type=="string")) and
     ((.widths//{})|to_entries|all(.value|type=="number" and floor==. and .>=1 and .<=128)) and
     ((.fit|if .==null then {} else . end)|type=="object") and
-    ((.fit.reserve|if .==null then 0 else . end)|type=="number" and floor==. and .>=0 and .<=200) and ((.fit.min_bar_cells|if .==null then 5 else . end)|type=="number" and floor==. and .>=1 and .<=128) and ((.fit.resize_watch|if .==null then false else . end)|type=="boolean") and ((.fit.rows|if .==null then 1 else . end)|IN(1,2)) and
+    ((.fit.reserve|if .==null then 0 else . end)|type=="number" and floor==. and .>=0 and .<=200) and ((.fit.min_bar_cells|if .==null then 5 else . end)|type=="number" and floor==. and .>=1 and .<=128) and ((.fit.rows|if .==null then 1 else . end)|IN(1,2)) and
     ((.resets|if .==null then true else . end)|type=="boolean") and ((.resets_format|if .==null then "clock" else . end)|IN("clock","countdown")) and
     ((.fit.ladder|if .==null then [] else . end)|type=="array" and all(IN("resets","disk_label","ctx_int","no_parens","disk_int","ctx_no_total","no_free","fable_short","disk_value","ctx_no_used","fable_label","fable_segment","seven_label","five_label","ctx_label","seven_segment","five_segment"))) and
     ((.fable.refresh_seconds//600)>=60) and ((.fable.max_stale_seconds//86400)>=60)
@@ -115,28 +115,6 @@ claude_pid=; _p=$PPID; for _i in 1 2 3 4 5 6; do _c=$(ps -o comm= -p "$_p" 2>/de
 # Live width: the pty ioctl is current at the instant we render; COLUMNS from Claude Code can lag a resize by one render.
 live_cols=; if [[ -n $claude_pid && -z ${CLAUDE_STATUSLINE_NO_LIVE_COLS:-} ]]; then _t=$(ps -o tty= -p "$claude_pid" 2>/dev/null | tr -d ' '); [[ -n $_t && $_t != '??' && -r /dev/$_t ]] && live_cols=$(stty size </dev/$_t 2>/dev/null | awk '{print $2}'); fi
 [[ $live_cols =~ ^[0-9]+$ && $live_cols -gt 0 ]] && COLUMNS=$live_cols
-# One resize watcher per Claude Code process, locked on its pid.
-start_resize_watch() {
-  local pid=$claude_pid lock
-  [[ -n $pid ]] || return 0
-  mkdir -p "$cache_dir" 2>/dev/null || return 0
-  lock=$cache_dir/resize-watch.$pid.pid
-  [[ -r $lock ]] && kill -0 "$(cat "$lock" 2>/dev/null)" 2>/dev/null && return 0
-  # Two overlapping renders must not both spawn: mkdir is the atomic mutex around check-and-spawn.
-  # A render killed mid-spawn never removes it; reclaim a mutex older than 60s.
-  if ! mkdir "$lock.spawn" 2>/dev/null; then
-    local mt; mt=$(stat -c %Y "$lock.spawn" 2>/dev/null || stat -f %m "$lock.spawn" 2>/dev/null || printf '%s' "$(date +%s)")
-    (( $(date +%s)-mt>60 )) && rmdir "$lock.spawn" 2>/dev/null && mkdir "$lock.spawn" 2>/dev/null || return 0
-  fi
-  trap "rmdir '$lock.spawn' 2>/dev/null" EXIT
-  if ! { [[ -r $lock ]] && kill -0 "$(cat "$lock" 2>/dev/null)" 2>/dev/null; }; then
-    nohup bash "${BASH_SOURCE[0]%/*}/resize-watch.sh" --pid "$pid" --settings "$config_dir/settings.json" --interval 0.1 --settle 0.2 >/dev/null 2>&1 &
-    printf '%s' $! >"$lock"
-  fi
-  rmdir "$lock.spawn" 2>/dev/null
-}
-# Opt-in: the watcher rewrites settings.json on resize, so it is off unless fit.resize_watch is true.
-[[ -n ${CLAUDE_STATUSLINE_DISABLE_WATCH:-} ]] || [[ $(get_cfg '.fit.resize_watch' 'false') != true ]] || start_resize_watch
 
 input=$(cat)
 # Timing trace, enabled by touching $cache_dir/trace: when each render started and what width it saw.

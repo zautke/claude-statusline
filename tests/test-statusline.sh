@@ -23,7 +23,6 @@ export HOME="$TMP/home"
 export CLAUDE_CONFIG_DIR="$TMP/config"
 export XDG_CACHE_HOME="$TMP/cache"
 export CLAUDE_STATUSLINE_NO_LIVE_COLS=1
-export CLAUDE_STATUSLINE_DISABLE_WATCH=1
 # Pinned "now" for the reset-time countdown (B-spec payload fixtures).
 export CLAUDE_STATUSLINE_NOW=1794427200
 mkdir -p "$HOME/work" "$CLAUDE_CONFIG_DIR" "$XDG_CACHE_HOME/claude-statusline"
