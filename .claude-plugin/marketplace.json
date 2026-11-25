@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "claude-statusline",
-      "description": "Configurable Claude Code status line with native limits, Fable usage, system health, terminal-width fitting, optional resize refit, drift controls, and cross-platform renderers.",
+      "description": "Configurable Claude Code status line with native limits, Fable usage, system health, terminal-width fitting, drift controls, and cross-platform renderers.",
       "source": ".",
       "category": "productivity"
     }
