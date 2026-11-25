@@ -3,7 +3,7 @@
   "evals": [
     {"id": 1, "prompt": "Make my 5h, 7d, and Fable bars 8, 10, and 14 cells long and preview it.", "expected_output": "Updates only active profile widths, validates ranges, and previews all three bars.", "files": []},
     {"id": 2, "prompt": "Put Fable first, hide disk and tmp, and make the line fit my split pane with a 3-cell bar floor.", "expected_output": "Reorders and filters segments, sets fit.min_bar_cells to 3, explains that percentages always use the bar heat colour, preserves unrelated configuration.", "files": []},
-    {"id": 4, "prompt": "Turn on automatic refit when I resize the terminal.", "expected_output": "Sets fit.resize_watch to true, explains the settings.json nonce write and the roughly two-second latency, offers refreshInterval as the zero-write alternative.", "files": []},
+    {"id": 4, "prompt": "Turn on automatic refit when I resize the terminal.", "expected_output": "Explains that Claude Code 2.1.326 and later re-runs the status line on terminal resize natively, that fit.resize_watch was removed in 2.4.0 and is ignored, and that refreshInterval is the lever for idle-time redraws.", "files": []},
     {"id": 3, "prompt": "Uninstall the custom Claude status line but keep every other setting.", "expected_output": "Removes only owned status-line configuration and disables the plugin.", "files": []},
     {"id": 5, "prompt": "Show a countdown to when my 5h limit resets.", "expected_output": "Sets resets_format to countdown (resets true) via scripts/resets-toggle --format countdown or /statusline-resets countdown, preserves other keys, and mentions that countdown sets statusLine.refreshInterval to 60 when the status line is claude-statusline's own.", "files": []}
   ]

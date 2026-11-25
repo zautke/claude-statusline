@@ -42,7 +42,6 @@ $fableRefreshSeconds = 600
 $fableMaxStale = 86400
 $fitReserve = 0
 $minBarCells = 5
-$resizeWatch = $false
 $configPath = Join-Path $configDir 'statusline.json'
 if (Test-Path -LiteralPath $configPath) {
     try {
@@ -59,7 +58,6 @@ if (Test-Path -LiteralPath $configPath) {
             if ($null -ne $cfg.fit.rows -and $cfg.fit.rows -notin 1, 2) { throw 'invalid fit.rows' }
             if ($null -ne $cfg.fit.reserve -and ($cfg.fit.reserve -lt 0 -or $cfg.fit.reserve -gt 200)) { throw 'invalid fit.reserve' }
             if ($null -ne $cfg.fit.min_bar_cells -and ($cfg.fit.min_bar_cells -lt 1 -or $cfg.fit.min_bar_cells -gt 128)) { throw 'invalid fit.min_bar_cells' }
-            if ($null -ne $cfg.fit.resize_watch -and $cfg.fit.resize_watch -isnot [bool]) { throw 'invalid fit.resize_watch' }
         }
         # "drift" is accepted for configs written before the segment was retired; the renderer skips it.
         $knownSegments = @('model', 'profile', 'cwd', 'context', 'disk', 'tmp', 'five_hour', 'seven_day', 'fable', 'drift')
@@ -83,10 +81,9 @@ if (Test-Path -LiteralPath $configPath) {
         if ($cfg.fable.model) { $fableModel = [string]$cfg.fable.model }
         if ($null -ne $cfg.fit.reserve) { $fitReserve = [int]$cfg.fit.reserve }
         if ($cfg.fit.min_bar_cells) { $minBarCells = [int]$cfg.fit.min_bar_cells }
-        if ($cfg.fit.resize_watch -eq $true) { $resizeWatch = $true }
         if ($cfg.fable.refresh_seconds) { $fableRefreshSeconds = [int64]$cfg.fable.refresh_seconds }
         if ($cfg.fable.max_stale_seconds) { $fableMaxStale = [int64]$cfg.fable.max_stale_seconds }
-    } catch { $cfg = $null; $fableModel = 'Fable'; $fableLabel = 'Fable'; $fableWidth = 12; $fitReserve = 0; $minBarCells = 5; $resizeWatch = $false; $fableRefreshSeconds = 600; $fableMaxStale = 86400 }
+    } catch { $cfg = $null; $fableModel = 'Fable'; $fableLabel = 'Fable'; $fableWidth = 12; $fitReserve = 0; $minBarCells = 5; $fableRefreshSeconds = 600; $fableMaxStale = 86400 }
 }
 # Reset-time mode: off | clock | countdown.
 $resetsMode = 'clock'
@@ -186,38 +183,6 @@ if (-not $env:CLAUDE_STATUSLINE_DISABLE_REFRESH) {
     if ((Get-NextRefresh) -le [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) {
         Start-Process -FilePath 'pwsh' -ArgumentList "-NoProfile -NonInteractive -File `"$PSCommandPath`" -RefreshFable" -WindowStyle Hidden
     }
-}
-
-# One resize watcher per Claude Code process: walk up the parent chain to claude, lock on its pid.
-# Opt-in: the watcher rewrites settings.json on resize, so it is off unless fit.resize_watch is true.
-if ($resizeWatch -and -not $env:CLAUDE_STATUSLINE_DISABLE_WATCH) {
-    try {
-        $proc = Get-Process -Id $PID
-        for ($i = 0; $i -lt 6 -and $proc; $i++) {
-            if ($proc.ProcessName -like 'claude*') { break }
-            $parentId = (Get-CimInstance Win32_Process -Filter "ProcessId = $($proc.Id)").ParentProcessId
-            $proc = if ($parentId) { Get-Process -Id $parentId -ErrorAction SilentlyContinue } else { $null }
-        }
-        if ($proc -and $proc.ProcessName -like 'claude*') {
-            $watchDir = Join-Path $cacheRoot 'claude-statusline'
-            New-Item -ItemType Directory -Force -Path $watchDir | Out-Null
-            $lock = Join-Path $watchDir "resize-watch.$($proc.Id).pid"
-            # Two overlapping renders must not both spawn: the directory create is the atomic mutex around check-and-spawn.
-            $mutex = $null
-            # A render killed mid-spawn never removes it; reclaim a mutex older than 60s.
-            if ((Test-Path -LiteralPath "$lock.spawn") -and ([DateTime]::UtcNow - (Get-Item -LiteralPath "$lock.spawn").LastWriteTimeUtc).TotalSeconds -gt 60) { Remove-Item -LiteralPath "$lock.spawn" -Force -ErrorAction SilentlyContinue }
-            try { $mutex = New-Item -ItemType Directory -Path "$lock.spawn" -ErrorAction Stop } catch { }
-            if ($mutex) {
-                try {
-                    $alive = (Test-Path -LiteralPath $lock) -and (Get-Process -Id ([int](Get-Content -LiteralPath $lock -Raw)) -ErrorAction SilentlyContinue)
-                    if (-not $alive) {
-                        $watcher = Start-Process -FilePath 'pwsh' -ArgumentList "-NoProfile -NonInteractive -File `"$(Join-Path $PSScriptRoot 'resize-watch.ps1')`" -ClaudePid $($proc.Id) -Settings `"$(Join-Path $configDir 'settings.json')`"" -WindowStyle Hidden -PassThru
-                        Set-Content -LiteralPath $lock -Value $watcher.Id -NoNewline
-                    }
-                } finally { Remove-Item -LiteralPath "$lock.spawn" -Force -ErrorAction SilentlyContinue }
-            }
-        }
-    } catch { }
 }
 
 $input_data = [Console]::In.ReadToEnd()

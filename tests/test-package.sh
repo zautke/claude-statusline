@@ -129,7 +129,7 @@ jq -e '.resets==true and .resets_format=="clock" and .fit.ladder[0]=="resets"' "
 ex=$temp/example-profile; mkdir -p "$ex" "$temp/cache"
 jq '.labels.five_hour="ZZ"' "$plugin/statusline.example.json" >"$ex/statusline.json"
 payload='{"model":{"display_name":"Claude"},"rate_limits":{"five_hour":{"used_percentage":20,"resets_at":1794435180},"seven_day":{"used_percentage":30,"resets_at":1794794400}}}'
-render() { printf '%s' "$payload" | NO_COLOR=1 CLAUDE_CONFIG_DIR="$1" XDG_CACHE_HOME="$temp/cache" CLAUDE_STATUSLINE_DISABLE_REFRESH=1 CLAUDE_STATUSLINE_DISABLE_WATCH=1 CLAUDE_STATUSLINE_NOW=1794427200 COLUMNS=300 bash "$plugin/scripts/statusline-command.sh"; }
+render() { printf '%s' "$payload" | NO_COLOR=1 CLAUDE_CONFIG_DIR="$1" XDG_CACHE_HOME="$temp/cache" CLAUDE_STATUSLINE_DISABLE_REFRESH=1 CLAUDE_STATUSLINE_NOW=1794427200 COLUMNS=300 bash "$plugin/scripts/statusline-command.sh"; }
 out=$(render "$ex")
 [[ $out == *'ZZ ['* && $out == *'↻'* ]] || fail "bash renderer did not accept statusline.example.json: $out"
 # Negative: the same file with an unknown ladder step is rejected, so defaults (label 5h) resume (PASS = fallback seen).

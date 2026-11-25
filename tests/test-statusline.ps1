@@ -28,7 +28,7 @@ function Invoke-Renderer([string[]]$argv = @(), [string]$stdin = $payload, [hash
     $psi.WorkingDirectory = $Work
     $psi.Environment['HOME'] = $HomeDir; $psi.Environment['USERPROFILE'] = $HomeDir
     $psi.Environment['CLAUDE_CONFIG_DIR'] = $ConfigDir; $psi.Environment['XDG_CACHE_HOME'] = $CacheDir
-    $psi.Environment['CLAUDE_STATUSLINE_DISABLE_WATCH'] = '1'; $psi.Environment['CLAUDE_STATUSLINE_DISABLE_REFRESH'] = '1'
+    $psi.Environment['CLAUDE_STATUSLINE_DISABLE_REFRESH'] = '1'
     $psi.Environment['NO_COLOR'] = '1'; $psi.Environment.Remove('COLUMNS') | Out-Null
     # Pinned "now" for the reset-time countdown (B-spec payload fixtures).
     $psi.Environment['CLAUDE_STATUSLINE_NOW'] = '1794427200'

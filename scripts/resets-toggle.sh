@@ -49,7 +49,7 @@ case "$action:$value" in set:on|set:off|set:toggle|format:clock|format:countdown
 cfg=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
 ri=$RESETS_COUNTDOWN_STATUS_LINE_REFRESH_INTERVAL_SECONDS
 
-# Follow links so a dotfiles-managed file keeps its link (from resize-watch.sh).
+# Follow links so a dotfiles-managed file keeps its link (shared helper).
 resolve() { local t=$1 n=0 d; if readlink -f / >/dev/null 2>&1; then readlink -f "$t"; return; fi; while [[ -L $t && $n -lt 32 ]]; do d=$(dirname "$t"); t=$(readlink "$t"); [[ $t == /* ]] || t=$d/$t; n=$((n+1)); done; printf '%s' "$t"; }
 
 # Temp file beside the target, original mode carried over, then rename. $3 (optional) is a digest the target must

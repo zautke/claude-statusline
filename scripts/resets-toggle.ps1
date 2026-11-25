@@ -50,7 +50,7 @@ $cfg = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $
 $ri = $RESETS_COUNTDOWN_STATUS_LINE_REFRESH_INTERVAL_SECONDS
 $utf8 = [Text.UTF8Encoding]::new($false)
 
-# Follow links so a dotfiles-managed file keeps its link (from resize-watch.ps1).
+# Follow links so a dotfiles-managed file keeps its link (shared helper).
 function Resolve-Target([string]$p) {
     try { $item = Get-Item -LiteralPath $p -Force -ErrorAction Stop; if ($item.LinkType) { $t = $item.ResolveLinkTarget($true); if ($t) { return $t.FullName } } } catch { }
     return $p
