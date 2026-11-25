@@ -1,5 +1,13 @@
 # SESSION LOG (newest first)
 
+## 2026-11-24 — repo triage: resize-wait fix found upstream, PR #15 rebased, PR #17 CI red (largo)
+
+- anthropics/claude-code#76988 (resize re-run request; the `resize-watch` sidecar and `fit.resize_watch` exist because of it) was closed as completed 2026-11-20: **fixed in Claude Code 2.1.326** (2026-11-16 changelog, "Fixed a custom status line keeping its old width … after a terminal resize", anthropics/claude-code#107291). Verified against the live changelog and npm (`@anthropic-ai/claude-code` latest 2.1.332; local CLI is 2.1.326). The ~2 s resize-watch settle is removable; user chose report-only for now.
+- `docs/continuity-2026-11-09` rebased onto `development` `e811a8d` (2.3.1); stale release facts refreshed (main still 2.0.0; tags stop at 2.0.0).
+- PR #15 (this branch): draft, CI green, 0 reviews. PR #17 (`feat/radial-indicators`): draft, **CI red** since 2026-11-17 (ubuntu/plugin/pwsh fail in ~2 s; macos cancelled at 15 min); logs expired; branch tip `c4cb2cb` duplicates the token-count fix already merged via #20 and will drop out on rebase.
+- Open PRs: #15, #17. Recently merged: #16, #18, #19, #20.
+- Note: web search returned HTTP 402 this session; research used Context7, the live changelog and GitHub search instead.
+
 ## 2026-11-14 evening → 2026-11-15 — live trial, cell-fitted ring, gradient tried and rejected (session a8831aae, largo)
 
 - Remote-session analysis (ssh from iTerm2 into adagio) written to kb; experiments S-001…S-004 proposed.

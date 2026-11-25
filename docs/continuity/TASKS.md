@@ -52,6 +52,12 @@
 - [ ] `install.sh` / `install.ps1` replace a symlinked `settings.json` with a plain file (temp-file rename). Write through the link instead. Today `/install-claude-statusline` guards against this.
 - [ ] largo: remove the `~/braisenly-statusline` shim once largo's `~/.agents` branch takes dot-agents `main`.
 
+## Open (2026-11-24)
+
+- [ ] PR #17 (`feat/radial-indicators`) CI red since 2026-11-17 (ubuntu/plugin/pwsh ~2 s fail; macos cancelled at 15 min; logs expired). Reproduce locally, fix, rebase onto `development` (drops the duplicate token-count commit `c4cb2cb`), then re-review.
+- [ ] Remove `fit.resize_watch` / `scripts/resize-watch.{sh,ps1}` / settings-nonce machinery: Claude Code 2.1.326 re-runs the status line on terminal resize natively (#76988 closed as completed; #107291). User chose report-only on 2026-11-24.
+- [ ] Release tags missing for 2.1.0 / 2.2.0 / 2.3.1 (only `claude-statusline@2.0.0` and `braisenly-statusline@1.1.0` exist); check the release protocol before tagging.
+
 ## Open (2026-11-09) — public release
 
 - [ ] README rewrite for the public (readme-writer, `docs/public-readme`)

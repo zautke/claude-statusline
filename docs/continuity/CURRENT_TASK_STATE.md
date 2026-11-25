@@ -1,6 +1,6 @@
 # CURRENT TASK STATE
 
-Updated 2026-11-15 ~11:50 MST (session a8831aae, largo, claude-fable-5-2). Two open threads.
+Updated 2026-11-24 (session, largo). Branch `docs/continuity-2026-11-09` rebased onto `development` `e811a8d` (2.3.1); stale release facts refreshed. Two open threads.
 
 > ## ⛔ STANDING HANDOFF ORDER — if this session runs on **adagio** (Windows), do this first
 >
@@ -42,7 +42,7 @@ Updated 2026-11-15 ~11:50 MST (session a8831aae, largo, claude-fable-5-2). Two o
 - **Ledger (source of truth):** kb `projects/claude-statusline/laboratory/claude-statusline-radial-indicators-laboratory-ledger-append-only`. Append a proposal before every run and an observation after it. Related kb notes: the teaching retrospective of 2026-11-14 and "Remote sessions (ssh from iTerm2 into adagio) - which rules apply and in what order".
 - **Current mechanism:** two code points in two cells. Remainder (unfilled part) U+FF000 + p in grey, arc U+FF080 + p in `heat_rgb(p)`; the shapes tile; a 9° background notch at the arc start and tip marks the fill boundary. Font `StatuslineRingsLab5.ttf` (`mklab2.py --tile -x 545 -y 386 -u 615 -i 346 -v -9`).
 - **Two per-user inputs the product needs:** (1) terminal background → grey by the WCAG contrast-ratio rule, ratio 1.75 (`lab/radial/grey.py`); (2) **cell geometry of the terminal font**: remainder centre x = advance/unitsPerEm × 1000 (545 for Victor Mono), centre y = ascent − line height/2 (386). A font built for another cell width is off by pixels.
-- **Renderer:** `scripts/statusline-command.sh` on `feat/radial-indicators` has `style: "bar" | "ring"` and `ring.grey` (default 76); with `ring` the fit ladder is walked with rings kept and they drop last. Laboratory wiring: lab code points, stored grey. PowerShell renderer untouched. Head `f6bc23f`, draft PR #17.
+- **Renderer:** `scripts/statusline-command.sh` on `feat/radial-indicators` has `style: "bar" | "ring"` and `ring.grey` (default 76); with `ring` the fit ladder is walked with rings kept and they drop last. Laboratory wiring: lab code points, stored grey. PowerShell renderer untouched. Head `c4cb2cb` (carries a duplicate of the token-count fix already merged as #20 — git will drop it on rebase), draft PR #17. **CI red since 2026-11-17** (ubuntu/plugin/pwsh fail in ~2 s; macos cancelled at 15 min); logs expired, cause not yet diagnosed.
 - **Rejected by the user:** gradient along the arc by dithered four-cell tiling (E-009). Do not re-wire a visual variant into the live renderer without showing a mock-up first.
 - **Live trial on largo (user's real config, keep unless told otherwise):** `~/.claude/settings.json` `statusLine.command` = `bash /Users/derp/claude-statusline-wt/claude-statusline/scripts/statusline-dispatcher.sh` (symlink `~/claude-statusline-wt/claude-statusline` → `radial`, so the resize watcher recognises the path); `~/.claude/statusline.json` has `"style": "ring", "ring": {"grey": 76}`. Revert: copy `~/.claude/settings.json.bak-pre-ring-2026-11-14` and `~/.claude/statusline.json.bak-pre-ring-2026-11-14` back. **Removing the `radial` worktree or the symlink breaks the user's status line.**
 - Installed on largo: `~/Library/Fonts/StatuslineRings.ttf`, `Lab1`…`Lab6`. Only Lab5 is in use.
@@ -55,8 +55,9 @@ Updated 2026-11-15 ~11:50 MST (session a8831aae, largo, claude-fable-5-2). Two o
 
 Unchanged. Agents were stopped with no output. Resume exactly from `HANDOFF-public-release.md`. Repo still PRIVATE; the visibility change waits for an explicit user OK.
 
-- `main` = `0e4c3eb`; `development` = `d78076e`; latest tag was `claude-statusline@2.0.0` on 2026-11-09 (not rechecked).
+- `main` = `0e4c3eb` (still 2.0.0 — `development` has not been promoted since); `development` = `e811a8d` (2.3.1, PRs #16/#18/#19/#20 merged). Latest tag remains `claude-statusline@2.0.0`; 2.1.0/2.2.0/2.3.1 were released without tags (release-record gap, unverified).
 - Worktrees `readme` (`docs/public-readme`) and `simplify` (`refactor/simplify-codebase`) are at `96805ad`, behind `development`; rebase before re-spawning agents.
+- **Claude Code 2.1.326 (2026-11-16) re-renders the status line on terminal resize** (changelog: "Fixed a custom status line keeping its old width … after a terminal resize"; fixes anthropics/claude-code#107291; closes #76988, where the resize-watch measurements were posted). The `fit.resize_watch` sidecar (~2 s settle, rewrites `statusLine.command` nonce in settings.json) is now redundant and can be removed; user chose to report only, not implement yet (2026-11-24).
 - Main checkout `/Users/derp/claude-statusline` is on `docs/continuity-2026-11-09`.
 
 **Protocol reminders:** read kb `protocols/release/protocol-org-wide-branch-and-version-policy-development-and-main` before any bump. Merge into `development` = MINOR+1, promotion to `main` = MAJOR+1, exactly three numbers. Review rounds capped at 3.
