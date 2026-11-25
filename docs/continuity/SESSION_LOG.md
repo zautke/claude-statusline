@@ -1,5 +1,17 @@
 # SESSION LOG (newest first)
 
+## 2026-11-25 — repo made public, resize watcher removed (2.4.0), promotion to main (3.0.0), tags backfilled (largo)
+
+- Repo `zautke/claude-statusline` made **public** (user decision). This lifted the Actions block: 2026-11-16→24 every job died with zero steps — check-run annotation: "The job was not started because recent account payments have failed or your spending limit needs to be increased." Not a code failure; #19/#20 merged with zero-step CI.
+- PR #17 CI re-ran green (ubuntu/macos/plugin/pwsh). It still needs: rebase onto `development` (drops the duplicate token-count commit `c4cb2cb`), remove committed `lab/radial/__pycache__/*.pyc`, then review.
+- PR #21 (`refactor/remove-resize-watch`): removed the `fit.resize_watch` sidecar after live-fire proof on Claude Code 2.1.326 — pty harness, real `claude`, no watcher, no nonce: re-render 0.8–2.1 s after SIGWINCH (140→90, 90→130, 130→70 cols; two runs incl. the real renderer). Merged as `269120f`, released as **2.4.0** (tag). CI green except pwsh pending at merge (user: skip CI); pwsh passed post-merge (4m52s).
+- Tags backfilled: 2.1.0 (`dce1c32`), 2.2.0 (`c2e4ccb`), 2.3.0 (`6fa51cc`), 2.3.1 (`d72d3a0`), plus new 2.4.0 (`269120f`) and 3.0.0 (`8d5ba83`).
+- Release records backfilled (kb project + org logs, project + global memory) for 2.1.0/2.2.0/2.3.0; 2.4.0 and 3.0.0 recorded.
+- Promotion: PR #23 `development` → `main`, merged as `8d5ba83`, MAJOR bump to **3.0.0** per the org-wide policy (promotion = MAJOR+1). No CHANGELOG entry for the promotion.
+- Pruned: stale worktrees (`readme`, `simplify`), branches `docs/public-readme`, `refactor/simplify-codebase`, remote `feat/7d-reset-date-time`, `feat/statusline-resets`, `feat/weekend-day-codes`, local `chore/release-3.0.0`, `refactor/remove-resize-watch`.
+- User's live `~/.claude/statusline.json` still has `fit.resize_watch: true` — inert no-op under 2.4.0.
+- Web search returned HTTP 402 again; research used Context7, the live changelog, GitHub search and the GitHub status page.
+
 ## 2026-11-24 — repo triage: resize-wait fix found upstream, PR #15 rebased, PR #17 CI red (largo)
 
 - anthropics/claude-code#76988 (resize re-run request; the `resize-watch` sidecar and `fit.resize_watch` exist because of it) was closed as completed 2026-11-20: **fixed in Claude Code 2.1.326** (2026-11-16 changelog, "Fixed a custom status line keeping its old width … after a terminal resize", anthropics/claude-code#107291). Verified against the live changelog and npm (`@anthropic-ai/claude-code` latest 2.1.332; local CLI is 2.1.326). The ~2 s resize-watch settle is removable; user chose report-only for now.

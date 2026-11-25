@@ -1,6 +1,6 @@
 # CURRENT TASK STATE
 
-Updated 2026-11-24 (session, largo). Branch `docs/continuity-2026-11-09` rebased onto `development` `e811a8d` (2.3.1); stale release facts refreshed. Two open threads.
+Updated 2026-11-25 (session, largo). Repo is PUBLIC since 2026-11-25; CI works again. `development` = 3.0.0 (promoted to `main` as 3.0.0, tag `claude-statusline@3.0.0`). Two open threads.
 
 > ## ⛔ STANDING HANDOFF ORDER — if this session runs on **adagio** (Windows), do this first
 >
@@ -55,7 +55,7 @@ Updated 2026-11-24 (session, largo). Branch `docs/continuity-2026-11-09` rebased
 
 Unchanged. Agents were stopped with no output. Resume exactly from `HANDOFF-public-release.md`. Repo still PRIVATE; the visibility change waits for an explicit user OK.
 
-- `main` = `0e4c3eb` (still 2.0.0 — `development` has not been promoted since); `development` = `e811a8d` (2.3.1, PRs #16/#18/#19/#20 merged). Latest tag remains `claude-statusline@2.0.0`; 2.1.0/2.2.0/2.3.1 were released without tags (release-record gap, unverified).
+- `main` = `8d5ba83` (3.0.0, PR #23); `development` = `0673f1d` (3.0.0). Tags now exist for 2.1.0, 2.2.0, 2.3.0, 2.3.1, 2.4.0 and 3.0.0 (2.1.0–2.3.1 backfilled 2026-11-25). Release records backfilled in kb (project + org logs) and both memory files.
 - Worktrees `readme` (`docs/public-readme`) and `simplify` (`refactor/simplify-codebase`) are at `96805ad`, behind `development`; rebase before re-spawning agents.
 - **Claude Code 2.1.326 (2026-11-16) re-renders the status line on terminal resize** (changelog: "Fixed a custom status line keeping its old width … after a terminal resize"; fixes anthropics/claude-code#107291; closes #76988, where the resize-watch measurements were posted). The `fit.resize_watch` sidecar (~2 s settle, rewrites `statusLine.command` nonce in settings.json) is now redundant and can be removed; user chose to report only, not implement yet (2026-11-24).
 - Main checkout `/Users/derp/claude-statusline` is on `docs/continuity-2026-11-09`.

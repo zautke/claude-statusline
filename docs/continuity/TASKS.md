@@ -54,7 +54,11 @@
 
 ## Open (2026-11-24)
 
-- [ ] CI blocked repo-wide: jobs never start — check-run annotation: "recent account payments have failed or your spending limit needs to be increased" (since ~2026-11-16; hits every branch incl. `development`). User must fix GitHub Billing & plans (or make the repo public). Until then PR #17 cannot go green; bash suite passes locally. After fix: rebase #17 onto `development` (drops duplicate token-count commit), re-run CI, review, merge.
+- [x] CI blocked repo-wide (2026-11-16→24): check-run annotation "recent account payments have failed or your spending limit needs to be increased". Root-caused 2026-11-24; repo made **public 2026-11-25** (user decision), Actions restored; #19/#20 had merged with zero-step CI runs. PR #17's CI then ran green (ubuntu/macos/plugin/pwsh all pass).
+- [x] Remove `fit.resize_watch` / resize-watch (PR #21, released as 2.4.0). Live-fire proof on 2.1.326: re-render 0.8–2.1 s after resize, no settings writes.
+- [x] Tag 2.1.0/2.2.0/2.3.0/2.3.1 (backfilled 2026-11-25), 2.4.0, 3.0.0. Promote development → main as 3.0.0 (PR #23, merge `8d5ba83`). Release records backfilled (kb project + org logs, both memory files).
+- [ ] PR #17 (`feat/radial-indicators`): CI now green; still needs rebase onto `development` (drops duplicate token-count commit `c4cb2cb`), removal of committed `lab/radial/__pycache__/*.pyc`, then review and merge decision.
+- [ ] User's live `~/.claude/settings.json` still carries a `# bsl-cols=` nonce in `statusLine.command` (inert since 2.4.0; the resets toggle still uses the mechanism). Leave unless the user wants it stripped.
 - [ ] Remove `fit.resize_watch` / `scripts/resize-watch.{sh,ps1}` / settings-nonce machinery: Claude Code 2.1.326 re-runs the status line on terminal resize natively (#76988 closed as completed; #107291). User chose report-only on 2026-11-24.
 - [ ] Release tags missing for 2.1.0 / 2.2.0 / 2.3.1 (only `claude-statusline@2.0.0` and `braisenly-statusline@1.1.0` exist); check the release protocol before tagging.
 
