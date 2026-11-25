@@ -5,6 +5,12 @@ All notable changes to claude-statusline (formerly braisenly-statusline) are doc
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Releases are tagged `claude-statusline@X.Y.Z`
 (up to 1.1.0: `braisenly-statusline@X.Y.Z`).
 
+## [3.1.0] — 2026-11-25
+
+### Minor changes
+
+- Experimental **ring** indicator style for the bash renderer (`style: "ring"`, `ring.grey`, default 76): two code points in two cells — a neutral-grey remainder and the filled arc in the heat colour, with a notch at the fill boundary. Ships with the laboratory assets under `lab/radial/` (fontTools generators, `StatuslineRingsLab*` fonts, evidence images, iTerm2 grey-track rule). Laboratory-grade: the production font and the Windows Terminal round are still pending; the PowerShell renderer is unchanged. The ring drops last in the fit ladder.
+
 ## [2.4.0] — 2026-11-25
 
 ### Removed
