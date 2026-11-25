@@ -38,6 +38,7 @@ valid_config() {
     ((.widths//{})|to_entries|all(.value|type=="number" and floor==. and .>=1 and .<=128)) and
     ((.fit|if .==null then {} else . end)|type=="object") and
     ((.fit.reserve|if .==null then 0 else . end)|type=="number" and floor==. and .>=0 and .<=200) and ((.fit.min_bar_cells|if .==null then 5 else . end)|type=="number" and floor==. and .>=1 and .<=128) and ((.fit.rows|if .==null then 1 else . end)|IN(1,2)) and
+    ((.style|if .==null then "bar" else . end)|IN("bar","ring")) and ((.ring.grey|if .==null then 76 else . end)|type=="number" and floor==. and .>=0 and .<=255) and
     ((.resets|if .==null then true else . end)|type=="boolean") and ((.resets_format|if .==null then "clock" else . end)|IN("clock","countdown")) and
     ((.fit.ladder|if .==null then [] else . end)|type=="array" and all(IN("resets","disk_label","ctx_int","no_parens","disk_int","ctx_no_total","no_free","fable_short","disk_value","ctx_no_used","fable_label","fable_segment","seven_label","five_label","ctx_label","seven_segment","five_segment"))) and
     ((.fable.refresh_seconds//600)>=60) and ((.fable.max_stale_seconds//86400)>=60)
@@ -60,6 +61,11 @@ refresh_seconds=$(get_cfg '.fable.refresh_seconds' '600')
 max_stale=$(get_cfg '.fable.max_stale_seconds' '86400')
 fable_model=$(get_cfg '.fable.model' '"Fable"')
 fit_reserve=$(get_cfg '.fit.reserve' '0')
+# Indicator style: bar | ring. A ring is two code points in two cells (laboratory font Statusline Rings Lab5): the
+# unfilled remainder at U+FF000+p in a neutral grey, then the filled arc at U+FF080+p in the heat colour.
+# ponytail: lab code points and a stored grey; the release font's block and a grey computed from the terminal
+# background replace both (kb: claude-statusline radial indicators laboratory ledger).
+indicator_style=$(get_cfg '.style' '"bar"'); ring_grey=$(get_cfg '.ring.grey' '76')
 min_bar_cells=$(get_cfg '.fit.min_bar_cells' '5')
 # Reset-time mode: off | clock | countdown. No jq // on .resets: it treats false as absent.
 resets_mode=clock; [[ -n "$cfg" ]]&&resets_mode=$(jq -r 'if .resets==false then "off" else (.resets_format // "clock") end' "$cfg")
@@ -161,6 +167,15 @@ bar() { # sets BAR; empty when bars are off. No subshells: this runs inside the 
   BAR=; ((bars_off))&&return
   width=$((width*scale_num/scale_den)); ((width<1))&&width=1
   ((pct<0))&&pct=0; ((pct>100))&&pct=100
+  if [[ $indicator_style == ring ]]; then
+    local h3 h4 rem arc
+    # UTF-8 of U+FF000+n is F3 BF (80 + n/64) (80 + n%64); printf \x works in Bash 3.2, \U does not.
+    printf -v h3 '%02X' $((0x80+pct/64)); printf -v h4 '%02X' $((0x80+pct%64)); printf -v rem "\\xF3\\xBF\\x$h3\\x$h4"
+    printf -v h3 '%02X' $((0x80+(128+pct)/64)); printf -v h4 '%02X' $((0x80+(128+pct)%64)); printf -v arc "\\xF3\\xBF\\x$h3\\x$h4"
+    if [[ -n ${NO_COLOR:-} ]]; then BAR=$rem$arc; return; fi
+    heat_rgb "$pct"; printf -v BAR '\033[38;2;%d;%d;%dm%s\033[38;2;%d;%d;%dm%s%s' "$ring_grey" "$ring_grey" "$ring_grey" "$rem" "$r" "$g" "$b" "$arc" "$reset"
+    return
+  fi
   # Whole cells only: an eighth-block glyph leaves a blank gap before the ░ track.
   full=$(((pct*width+50)/100)); ((pct>0&&full==0))&&full=1
   BAR='['
@@ -340,6 +355,12 @@ shrink_layout() { # $1 = flat|stacked. Sets scale and rows on success.
   [[ -n $best ]]||{ scale_num=1 scale_den=1; return 1; }
   scale_num=$best; build; "assemble_$1"; return 0
 }
+# Rings do not shrink and cost two cells each, so they are the last thing to give up: walk the whole ladder with
+# rings on before falling through to the stages that drop the indicators.
+if [[ $indicator_style == ring ]]; then
+  for step in $ladder; do F+="$step "; try_layouts&&{ pad_rows; emit; }; done
+  F=" "; total=0
+fi
 if ((total>0)); then
   shrink_layout flat&&{ pad_rows; emit; }
   ((fit_rows>=2))&&shrink_layout stacked&&{ pad_rows; emit; }
