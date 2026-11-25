@@ -54,7 +54,7 @@
 
 ## Open (2026-11-24)
 
-- [ ] PR #17 (`feat/radial-indicators`) CI red since 2026-11-17 (ubuntu/plugin/pwsh ~2 s fail; macos cancelled at 15 min; logs expired). Reproduce locally, fix, rebase onto `development` (drops the duplicate token-count commit `c4cb2cb`), then re-review.
+- [ ] CI blocked repo-wide: jobs never start — check-run annotation: "recent account payments have failed or your spending limit needs to be increased" (since ~2026-11-16; hits every branch incl. `development`). User must fix GitHub Billing & plans (or make the repo public). Until then PR #17 cannot go green; bash suite passes locally. After fix: rebase #17 onto `development` (drops duplicate token-count commit), re-run CI, review, merge.
 - [ ] Remove `fit.resize_watch` / `scripts/resize-watch.{sh,ps1}` / settings-nonce machinery: Claude Code 2.1.326 re-runs the status line on terminal resize natively (#76988 closed as completed; #107291). User chose report-only on 2026-11-24.
 - [ ] Release tags missing for 2.1.0 / 2.2.0 / 2.3.1 (only `claude-statusline@2.0.0` and `braisenly-statusline@1.1.0` exist); check the release protocol before tagging.
 
